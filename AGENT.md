@@ -57,4 +57,4 @@
 
 ## Последнее исходное состояние (2026-10-08)
 
-M0/M1 закрыты в GitHub; первый Android APK собран без встроенного VPN-ядра, облачный Gradle и GitHub Actions прошли. Следующий первый незакрытый этап — M2: сборка AndroidLibXrayLite/Xray AAR и настоящий Android VpnService. Приёмка на телефоне не выполнялась. Состояние этапов определяет **MILESTONES.md**, не этот абзац.
+M0/M1 закрыты в GitHub; первый Android APK собран без встроенного VPN-ядра, облачный Gradle и GitHub Actions прошли. Следующий открытый gate — **M2 приёмка на физическом Android**. JNI Xray ARM64 AAR и код VpnService/TUN/Reality компилируются, но смена IP, реальный HTTPS, DNS/IPv6 и две сети на OnePlus Nord 3 НЕ ПРОВЕРЕНЫ. См. docs/evidence/M2_NATIVE_BUILD_2026-10-08.md. Состояние этапов определяет **MILESTONES.md**, не этот абзац.

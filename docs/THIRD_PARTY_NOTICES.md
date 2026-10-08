@@ -38,3 +38,11 @@ No APK, Java source, or native library from Happ, v2rayNG, SFA or AndroidLibXray
 - [ ] Check compatibility of any copied GPL source before integrating it.
 
 This inventory is informational and is not legal advice.
+
+## Native M2 linked core (build output)
+
+- [AndroidLibXrayLite](https://github.com/2dust/AndroidLibXrayLite) source pinned to `ea96a7f9c33d6e18021386db96bf95680e853c93`, LGPL-3.0, [local copy](../third_party/licenses/AndroidLibXrayLite-LGPL-3.0.txt).
+- [Xray-core](https://github.com/XTLS/Xray-core), MPL-2.0, [local copy](../third_party/licenses/Xray-core-MPL-2.0.txt); Go version selected by upstream module: `v1.260327.1-0.20260930074004-b26a91de4f32`.
+- Go mobile tools at `golang.org/x/mobile@v0.0.0-20260908204917-8b95e45f8d3e`, Go 1.27.2 and Android NDK 28.0.13004108.
+- Bundled native AAR is **built from pinned source at CI time**, not committed to this repository; source and build instructions are provided in [scripts/build-xray-android.sh](../scripts/build-xray-android.sh).
+- Native binaries and transitive dependencies require a full SBOM, source-availability and LGPL relinking review before M5/M6 release. The current M2 debug artifact is **experimental**, not a security-audited consumer VPN product.

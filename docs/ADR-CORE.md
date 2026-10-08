@@ -2,7 +2,7 @@
 
 **Date:** 2026-10-08  
 **Decision:** Xray-core via AndroidLibXrayLite *as the implementation target*.  
-**Implementation status:** the M1 application compiles without the VPN engine. Native AAR binding and TUN integration are **not yet integrated** and are the first blocking tasks in M2.
+**Implementation status:** M2 ARM64 AAR is built from pinned `AndroidLibXrayLite` SHA `ea96a7f9c33d6e18021386db96bf95680e853c93` and integrated. Kotlin VpnService/Go JNI compile. **Actual connectivity and tunnel protection on a physical Android device: NOT RUN. M2 gate OPEN.**
 
 ## Alternatives considered
 
@@ -43,3 +43,13 @@ Exact versions of **core implementation** and their dependency NOTICE/SBOM must 
 - **PASS:** `apksigner verify` with v2 debug signature; `aapt` identifies `dev.omega.vpn` (minSdk 26, targetSdk 35). APK has no `android.permission.INTERNET` or VPN service yet.
 - **NOT RUN (M2):** actual gomobile `AndroidLibXrayLite` AAR build, ABI validation, VpnService TUN, device connectivity.
 - Upstream AndroidLibXrayLite `go.mod` observed requiring Go 1.27 and Xray `v1.260327.1-0.20260930074004-b26a91de4f32`; before compiling AAR, pin exact commits and review their transitive licenses. `docs/THIRD_PARTY_NOTICES.md` records this.
+
+## M2 API implementation (2026-10-08)
+
+- Go 1.27.2, Android SDK 35, NDK 28.0.13004108, `gomobile` and `gobind` at `golang.org/x/mobile@v0.0.0-20260908204917-8b95e45f8d3e`.
+- AndroidLibXrayLite pinned source commit `ea96a7f9c33d6e18021386db96bf95680e853c93` built with `gomobile bind -target=android/arm64 -androidapi 26`.
+- Built AAR SHA256: `a1671503af774f5e21c3c0cac9a756c35f45be97b48bb65daf33ac39bcd4c92d`; includes `lib/arm64-v8a/libgojni.so` ~36 MB uncompressed. No upstream Happ assets.
+- Verified generated Java signatures with `javap`: `Libv2ray.initCoreEnv(String,String)`, `Libv2ray.newCoreController(CoreCallbackHandler)`, `CoreController.startLoop(String,int)`, `stopLoop()`.
+- Android `OmegaVpnService` builds TUN using `VpnService.Builder`, adds IPv4/IPv6 default routes, excludes its own package to avoid recursion, passes `ParcelFileDescriptor.fd` to native Xray `tun` inbound, and closes controller before FD on shutdown.
+- First accepted profile subset: `vless://` URI, TCP+REALITY with UUID, SNI, publicKey, shortId, fingerprint, optional Vision flow. Routes from TUN go only to the VLESS proxy; a `freedom` outbound is absent.
+- No end-to-end device test yet. Review Android foreground restrictions, DNS/IPv6 safety and packet forwarding in M2 device acceptance.

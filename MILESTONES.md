@@ -30,6 +30,18 @@
 
 ## M2. Вертикальный срез настоящего VPN — CRITICAL
 
+## Подзадачи M2 с подтверждёнными результатами (не замена release gate)
+
+- [x] Go 1.27.2 + NDK r28 установлены в изолированном облаке; native Xray ARM64 AAR собран по закреплённому commit, SHA-256 проверен.
+- [x] Подтверждены JNI методы `CoreController.startLoop(String,int)`, `stopLoop()` и `Libv2ray.initCoreEnv`.
+- [x] Исходники Kotlin VpnService, foreground-сервис, запрос разрешения, VLESS parser и TUN config интегрированы и компилируются в debug APK.
+- [x] Пройдены локальные `assembleDebug`, `testDebugUnitTest` (7/7) и `lintDebug` (ошибок нет); архив содержит `lib/arm64-v8a/libgojni.so`.
+- [x] REA/JADX подтвердил `OmegaVpnService`, `BIND_VPN_SERVICE` и тип `specialUse` в фактическом APK.
+- [ ] На настоящем OnePlus Nord 3 проверено, что Android принимает разрешение, запускает TUN, core начинает передачу IP-пакетов, HTTPS проходит через сервер и исходящий IP меняется.
+- [ ] Проверены отключение, отзыв разрешения, DNS/IPv6 на двух типах сетей, отсутствие прямого обходного выхода при потере узла.
+
+**M2 status: IN PROGRESS / NOT ACCEPTED.** Успешная компиляция нативного движка **не равна** работающему VPN. Отчёт: [M2_NATIVE_BUILD_2026-10-08.md](docs/evidence/M2_NATIVE_BUILD_2026-10-08.md).
+
 - [ ] Android `VpnService`, системный диалог согласия и foreground-уведомление.
 - [ ] Приём одной локально импортированной **разрешённой** VLESS + TLS/Reality конфигурации.
 - [ ] Запуск ядра из приложения, обмен пакетами через Android TUN, остановка, корректное освобождение ресурсов.
