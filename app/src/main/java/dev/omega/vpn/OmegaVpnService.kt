@@ -27,6 +27,7 @@ class OmegaVpnService : VpnService() {
     private var controller: CoreController? = null
     private var tunnel: ParcelFileDescriptor? = null
     @Volatile private var running = false
+    @Volatile private var failed = false
 
     override fun onCreate() {
         super.onCreate()
@@ -42,6 +43,7 @@ class OmegaVpnService : VpnService() {
         if (intent.action != CONNECT || running) return START_NOT_STICKY
         foreground()
         running = true
+        failed = false
         val link = intent.getStringExtra(PROFILE)
         intent.removeExtra(PROFILE)
         worker.execute { startTunnel(link) }
@@ -92,6 +94,7 @@ class OmegaVpnService : VpnService() {
             // Go gomobile binding requires int (not long).
             native.startLoop(XrayConfigFactory.build(p),fd.fd)
         } catch (_: Throwable) {
+            failed = true
             VpnRuntime.report(VpnRuntime.State.ERROR,"Ошибка запуска VPN. Проверьте ключ или сеть")
             stopSelf()
         }
@@ -103,10 +106,14 @@ class OmegaVpnService : VpnService() {
         try { tunnel?.close() } catch (_: Exception) { }
         tunnel = null
         running = false
-        VpnRuntime.report(VpnRuntime.State.DISCONNECTED,"Не подключено")
+        if (!failed) VpnRuntime.report(VpnRuntime.State.DISCONNECTED,"Не подключено")
     }
 
-    override fun onRevoke() { stopSelf() }
+    override fun onRevoke() {
+        failed = true
+        VpnRuntime.report(VpnRuntime.State.ERROR,"VPN-разрешение было отозвано")
+        stopSelf()
+    }
     override fun onDestroy() {
         // Ordered behind startTunnel on the same worker, avoids close/use race.
         worker.execute { teardown() }
