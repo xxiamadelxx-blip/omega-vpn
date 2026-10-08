@@ -14,6 +14,8 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.Row
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
@@ -57,6 +59,7 @@ class MainActivity : ComponentActivity() {
             var position by remember { mutableIntStateOf(0) }
             var pendingLink by remember { mutableStateOf<String?>(null) }
             var loading by remember { mutableStateOf(false) }
+            var riskAcknowledged by remember { mutableStateOf(false) }
             var error by remember { mutableStateOf("") }
             val scope = rememberCoroutineScope()
 
@@ -92,11 +95,15 @@ class MainActivity : ComponentActivity() {
             OmegaScreen(
                 nodesCount = nodes.size,
                 selectedNumber = if (nodes.isEmpty()) 0 else position + 1,
+                selectedAddress = if (nodes.isEmpty()) "" else nodes[position].host,
+                riskAcknowledged = riskAcknowledged,
+                onRiskAcknowledged = { riskAcknowledged = it },
                 loading = loading,
                 error = error,
                 onConnect = {
                     if (nodes.isNotEmpty()) {
-                        connectSelected(nodes[position])
+                        if (riskAcknowledged) connectSelected(nodes[position])
+                        else error = "Сначала подтвердите понимание рисков публичного VPN."
                     } else if (!loading) {
                         loading = true
                         error = ""
@@ -107,7 +114,8 @@ class MainActivity : ComponentActivity() {
                                 }
                                 nodes = loaded
                                 position = 0
-                                connectSelected(loaded.first())
+                                // Security: discovery must NEVER silently connect to an unknown operator.
+                                // The user must explicitly acknowledge risk and tap Connect separately.
                             } catch (_: Exception) {
                                 error = "Не получилось загрузить бесплатные серверы. Проверьте интернет и повторите."
                             } finally {
@@ -120,7 +128,7 @@ class MainActivity : ComponentActivity() {
                     if (nodes.size > 1 && !loading) {
                         position = (position + 1) % nodes.size
                         error = ""
-                        connectSelected(nodes[position])
+                        // Selecting another untrusted host does not initiate a VPN connection.
                     }
                 },
                 onRefresh = {
@@ -152,6 +160,9 @@ class MainActivity : ComponentActivity() {
 fun OmegaScreen(
     nodesCount: Int,
     selectedNumber: Int,
+    selectedAddress: String,
+    riskAcknowledged: Boolean,
+    onRiskAcknowledged: (Boolean) -> Unit,
     loading: Boolean,
     error: String,
     onConnect: () -> Unit,
@@ -177,7 +188,7 @@ fun OmegaScreen(
                 if (loading) CircularProgressIndicator()
                 if (nodesCount > 0) {
                     Text(
-                        "В каталоге: ${nodesCount} подходящих узлов • выбран №${selectedNumber}",
+                        "В каталоге: ${nodesCount} адресов (не проверены на доверие) • выбран №${selectedNumber}: ${selectedAddress}",
                         color = Color(0xFFACC2DE),
                         textAlign = TextAlign.Center,
                         fontSize = 14.sp
@@ -186,14 +197,36 @@ fun OmegaScreen(
                     Text("Ключи искать не нужно. Ω VPN загрузит список самостоятельно.",
                         color = Color(0xFFACC2DE), textAlign = TextAlign.Center)
                 }
+                if (nodesCount > 0 && !connected && !connecting) {
+                    Spacer(Modifier.height(14.dp))
+                    Text(
+                        "ВНИМАНИЕ: владелец публичного VPN может видеть ваш реальный IP, время подключения и метаданные трафика. " +
+                            "Его личность, репутация и возможная связь со спецслужбами не проверены. " +
+                            "Не используйте для чувствительных данных. Список загружается с GitHub, который также видит IP при запросе.",
+                        color = Color(0xFFFFC99E), fontSize = 13.sp, textAlign = TextAlign.Center
+                    )
+                    Spacer(Modifier.height(10.dp))
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Checkbox(
+                            checked = riskAcknowledged,
+                            onCheckedChange = onRiskAcknowledged
+                        )
+                        Text("Понимаю риски и разрешаю попытку подключения к выбранному узлу",
+                            color = Color.White, fontSize = 13.sp)
+                    }
+                }
                 Spacer(Modifier.height(22.dp))
                 if (connected || connecting) {
                     Button(onClick = onDisconnect, modifier = Modifier.fillMaxWidth()) {
                         Text("Отключить VPN")
                     }
                 } else {
-                    Button(onClick = onConnect, enabled = !busy, modifier = Modifier.fillMaxWidth()) {
-                        Text(if (nodesCount == 0) "Найти бесплатный VPN" else "Подключиться бесплатно")
+                    Button(
+                        onClick = onConnect,
+                        enabled = !busy && (nodesCount == 0 || riskAcknowledged),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text(if (nodesCount == 0) "Найти бесплатные узлы" else "Подключиться к выбранному узлу")
                     }
                 }
                 if (nodesCount > 0 && !connected && !connecting) {

@@ -50,6 +50,8 @@ object PublicNodeParser {
             val uri = line.trim()
             if (!uri.startsWith("vless://", ignoreCase = true)) continue
             val profile = try { VlessProfile.parse(uri) } catch (_: Exception) { continue }
+            // Public feed is untrusted: do not follow hostnames, internal networks or metadata IPs.
+            if (!PublicNodeAddressPolicy.isAllowed(profile.host)) continue
             val unique = listOf(profile.host, profile.port, profile.uuid, profile.publicKey).joinToString("|")
             if (!seen.add(unique)) continue
             result.add(PublicNode(uri, profile.host, profile.port))

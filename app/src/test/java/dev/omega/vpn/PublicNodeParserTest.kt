@@ -7,7 +7,7 @@ import org.junit.Test
 import java.util.Base64
 
 class PublicNodeParserTest {
-    private val valid = "vless://00000000-0000-4000-8000-000000000001@vpn.example.org:443" +
+    private val valid = "vless://00000000-0000-4000-8000-000000000001@8.8.8.8:443" +
         "?encryption=none&security=reality&type=tcp&sni=www.example.org" +
         "&pbk=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA&sid=abcd&fp=chrome" +
         "&flow=xtls-rprx-vision#Demo"
@@ -17,7 +17,7 @@ class PublicNodeParserTest {
         val encoded = Base64.getEncoder().encodeToString(body)
         val servers = PublicNodeParser.parse(encoded)
         assertEquals(1, servers.size)
-        assertEquals("vpn.example.org", servers.single().host)
+        assertEquals("8.8.8.8", servers.single().host)
         assertEquals(443, servers.single().port)
     }
 
@@ -45,8 +45,9 @@ class PublicNodeParserTest {
 
     @Test fun preventsHugeCatalogFromOverloadingUi() {
         val body = (1..180).joinToString("\n") { n ->
-            valid.replace("vpn.example.org", "server${n}.example.org")
+            valid.replace("8.8.8.8", "8.8.10.${n}")
         }
         assertEquals(120, PublicNodeParser.parse(body).size)
     }
 }
+
