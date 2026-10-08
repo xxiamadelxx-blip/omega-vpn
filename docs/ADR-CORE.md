@@ -35,3 +35,11 @@ Exact versions of **core implementation** and their dependency NOTICE/SBOM must 
 2. APK package ID `dev.omega.vpn`, `minSdk 26`, `targetSdk 35`, with **no** `VPN_SERVICE` permission or network behavior prematurely advertised.
 3. M2 integration plan documented above, GPL/Apache/Kotlin dependencies acknowledged.
 4. Build cannot be marked a functioning VPN. M5 device gate unchanged.
+
+## M1 build-spike result (2026-10-08)
+
+- **PASS:** Android Gradle Plugin 8.9.2, Kotlin+Compose 2.1.20, Gradle Wrapper 8.13, JDK 21, compile/target SDK 35.
+- **PASS:** cloud `assembleDebug` and JUnit test 1/1; [GitHub Actions successful build](https://github.com/xxiamadelxx-blip/omega-vpn/actions/runs/37804978821).
+- **PASS:** `apksigner verify` with v2 debug signature; `aapt` identifies `dev.omega.vpn` (minSdk 26, targetSdk 35). APK has no `android.permission.INTERNET` or VPN service yet.
+- **NOT RUN (M2):** actual gomobile `AndroidLibXrayLite` AAR build, ABI validation, VpnService TUN, device connectivity.
+- Upstream AndroidLibXrayLite `go.mod` observed requiring Go 1.27 and Xray `v1.260327.1-0.20260930074004-b26a91de4f32`; before compiling AAR, pin exact commits and review their transitive licenses. `docs/THIRD_PARTY_NOTICES.md` records this.

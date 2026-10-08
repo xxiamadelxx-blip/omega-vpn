@@ -19,12 +19,14 @@
 
 ## M1. Выбор открытого VPN-ядра и Android build-spike — CRITICAL
 
-- [ ] Установить стек Android-проекта, проверить доступность Android SDK/Gradle/JDK в облаке; создать минимальное приложение.
-- [ ] Сравнить **v2rayNG/Xray** и **Android sing-box**: лицензии, бинарные API, arm64-v8a, Android 15, внедрение TUN/VpnService.
-- [ ] Зафиксировать точные версии зависимостей и лицензии, приложить notices и правила публикации исходников.
-- [ ] Выбрать одну основу, оформить `docs/ADR-CORE.md`; не переносить код Happ.
-- [ ] `./gradlew assembleDebug` с чистого клона собирает APK; CI запускает сборку.
-**Gate M1:** воспроизводимый APK и осознанно выбранный движок без платных API. В этот момент VPN ещё может не работать.
+- [x] Установить стек Android-проекта, проверить доступность Android SDK/Gradle/JDK в облаке; создать минимальное приложение.
+- [x] Сравнить **v2rayNG/Xray** и **Android sing-box**: лицензии, бинарные API, arm64-v8a, Android 15, внедрение TUN/VpnService.
+- [x] Зафиксировать точные версии зависимостей и лицензии, приложить notices и правила публикации исходников.
+- [x] Выбрать одну основу, оформить `docs/ADR-CORE.md`; не переносить код Happ.
+- [x] `./gradlew assembleDebug` с чистого клона собирает APK; CI запускает сборку.
+**Gate M1:** воспроизводимый APK и осознанно выбранный движок без платных API. **PASS для build-spike**: Kotlin/Compose APK без сетевого ядра и без VPN. Подключение и сборка Xray AAR относятся к M2.
+
+**Доказательства M1:** 2026-10-08; исходный APK-commit `39887b1`, CI configuration commit `70288cb`, артефакт [GitHub Actions run 37804978821](https://github.com/xxiamadelxx-blip/omega-vpn/actions/runs/37804978821) (PASS: SDK, wrapper, assembleDebug, testDebugUnitTest, upload artifact); облачный тест: `BUILD SUCCESSFUL in 2m29s`, JUnit 1/1, APK 9.1 MB, SHA-256 `ddb0cb0525e14faf81257153fc9b956b98c578d910c0cbdfe4b03ae82472e2d9`. [Полный протокол](docs/evidence/M1_BUILD_2026-10-08.md). Телефон, реальный VPN, DNS/IP, Wi-Fi/mobile: **NOT RUN**. Точные версии опубликованных M1-зависимостей указаны в Gradle и [notices](docs/THIRD_PARTY_NOTICES.md). AndroidLibXrayLite/Xray пока не включены в APK; сборка и закрепление версий этой связки являются блокером M2.
 
 ## M2. Вертикальный срез настоящего VPN — CRITICAL
 
