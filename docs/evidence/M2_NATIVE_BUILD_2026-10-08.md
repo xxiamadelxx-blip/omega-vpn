@@ -23,7 +23,7 @@
 5. **PASS:** APK `dev.omega.vpn`, `0.2.0-m2`, targetSdk 35, includes native ARM64 JNI `libgojni.so`; APK Signature Scheme v2 verified.
 6. **PASS:** REA `inspect-android-package` read `OmegaVpnService` in final manifest with `android.permission.BIND_VPN_SERVICE` and foreground `specialUse`.
 7. **PASS for prior M2 commit:** [GitHub Actions 37810047834](https://github.com/xxiamadelxx-blip/omega-vpn/actions/runs/37810047834) built native AAR from pinned source, Android APK, unit tests and uploaded ZIP artifact.
-8. **Latest corrected M2 source CI:** [GitHub Actions 37810677819](https://github.com/xxiamadelxx-blip/omega-vpn/actions/runs/37810677819). Consult its live state; not assumed successful before completion.
+8. **PASS, final corrected M2 source CI:** [GitHub Actions run 37810677819](https://github.com/xxiamadelxx-blip/omega-vpn/actions/runs/37810677819). Verified all steps successful: native Xray AAR from pinned source, Gradle Wrapper, APK build, 7 unit tests, Android Lint, artifact upload. Artifact ID `11564104591`, name `omega-vpn-m2-debug`, ZIP digest `sha256:b324c9c8fadb16c7adb2e24e5f986d079c6ee60a531631e1371580fa1069fc60`, expires 2026-10-15. The APK extracted from the verified artifact has SHA-256 `41da73dabf58cad3e9abcae73b590f8f7d54a34b178ffc65b660300aad47c99a` (different from independent Vercel build).
 
 Local final M2 check source commit: `4b1827a24c691e19953a501ff9ce1f975e1f5f87`. Local APK SHA-256: `3bca5f46966adf97ca4a29030f5e8d78ef7a370e1788ecedca115b0cc8e4556e`, around 51 MiB. This APK checksum is specific to this **local** build, not the GitHub Actions ZIP checksum.
 
