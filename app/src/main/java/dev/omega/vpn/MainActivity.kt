@@ -15,6 +15,8 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
@@ -177,7 +179,7 @@ fun OmegaScreen(
     MaterialTheme {
         Surface(color = Color(0xFF101627), modifier = Modifier.fillMaxSize()) {
             Column(
-                modifier = Modifier.fillMaxSize().padding(24.dp),
+                modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(24.dp),
                 verticalArrangement = Arrangement.Center,
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
@@ -194,8 +196,11 @@ fun OmegaScreen(
                         fontSize = 14.sp
                     )
                 } else {
-                    Text("Ключи искать не нужно. Ω VPN загрузит список самостоятельно.",
-                        color = Color(0xFFACC2DE), textAlign = TextAlign.Center)
+                    Text(
+                        "Ключи искать не нужно. Ω VPN скачает список с GitHub. " +
+                            "При запросе GitHub увидит ваш исходный IP; сами VPN-операторы неизвестны.",
+                        color = Color(0xFFACC2DE), textAlign = TextAlign.Center
+                    )
                 }
                 if (nodesCount > 0 && !connected && !connecting) {
                     Spacer(Modifier.height(14.dp))
