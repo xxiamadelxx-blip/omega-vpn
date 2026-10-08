@@ -48,6 +48,14 @@ A third-party VPN operator can observe connection IPs, timestamps, traffic volum
 - [ ] Repeat tests with adversarial payloads, parser fuzzing, native-lib security review, and runtime analysis.
 - [ ] If user needs protection from a state-level actor, disable anonymous nodes for that use case, not simply hide a warning.
 
+## Verification evidence (2026-10-08)
+
+- Source hardening: commit [c6c56c5](https://github.com/xxiamadelxx-blip/omega-vpn/commit/c6c56c5ce344ca59ade4f7dbcb5545cd1d0587e5). UI scrolling and pre-download IP disclosure: commit [ae8448b](https://github.com/xxiamadelxx-blip/omega-vpn/commit/ae8448b42c2f0c5754b7790a6a386ee25b591239).
+- **PASS:** independent cloud Android `assembleDebug`, `testDebugUnitTest`, `lintDebug` from commit `ae8448b`. **16/16 unit tests** (3 security address policy tests), 0 failures, Lint PASS; APK SHA-256 `0bab5bdd34c52d0fdefd3f9748c0dd019c105a1401ce4c6c7ddfe30055b00351`. This is a test build, not a verified secure release.
+- **PASS:** additional ephemeral JVM test loaded the actual 2026-10-08 public feed snapshot into `PublicNodeParser.parse()` with the strict address policy: returned **120 candidates**, and every candidate passed `PublicNodeAddressPolicy.isAllowed`. 1/1 additional test PASS. No private node configuration was committed.
+- GitHub CI on source [run 37816194100](https://github.com/xxiamadelxx-blip/omega-vpn/actions/runs/37816194100) should be checked for final status independently. Do not claim a passed job until confirmed.
+- **NOT RUN:** Android device, emulator runtime, active MITM tests, independent node owner identification, DNS/IPv6/fail-closed route tests.
+
 ## User privacy and consent
 
 The first press of "Find free nodes" accesses `raw.githubusercontent.com` **outside the VPN**, which necessarily exposes the current public source IP to the CDN/GitHub service and local network operator. Once a node is selected, its operator sees the user's source IP. The app must disclose both facts. No third-party catalogue can make these network interactions fully anonymous by itself.
