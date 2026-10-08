@@ -3,8 +3,18 @@ name: Android M2 native Xray
 on:
   push:
     branches: [main]
+    paths-ignore:
+      - '**/*.md'
+      - 'docs/**'
   pull_request:
+    paths-ignore:
+      - '**/*.md'
+      - 'docs/**'
   workflow_dispatch:
+
+concurrency:
+  group: omega-android-${{ github.ref }}
+  cancel-in-progress: true
 
 permissions:
   contents: read
