@@ -19,3 +19,6 @@ private-subscriptions/
 *.apk
 *.aab
 .DS_Store
+
+# Generated LGPL native Android library, build from pinned source
+app/libs/*.aar

@@ -1,4 +1,4 @@
-name: Android M1 build
+name: Android M2 native Xray
 
 on:
   push:
@@ -12,7 +12,7 @@ permissions:
 jobs:
   android:
     runs-on: ubuntu-24.04
-    timeout-minutes: 30
+    timeout-minutes: 80
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -36,6 +36,16 @@ jobs:
           yes | "$SDK/cmdline-tools/latest/bin/sdkmanager" --sdk_root="$SDK" --licenses > /dev/null || true
           "$SDK/cmdline-tools/latest/bin/sdkmanager" --sdk_root="$SDK" \
             "platforms;android-35" "build-tools;35.0.0" "platform-tools"
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.27.2'
+          cache: false
+      - name: Install pinned Android NDK
+        run: |
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --sdk_root="$ANDROID_HOME" "ndk;28.0.13004108"
+      - name: Build Android Xray AAR from pinned source
+        run: bash scripts/build-xray-android.sh
       - name: Verify Gradle wrapper
         uses: gradle/actions/wrapper-validation@v4
       - name: Compile APK and run unit tests
@@ -43,7 +53,7 @@ jobs:
       - name: Upload debug artifact
         uses: actions/upload-artifact@v4
         with:
-          name: omega-vpn-m1-debug
+          name: omega-vpn-m2-debug
           path: app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
           retention-days: 7

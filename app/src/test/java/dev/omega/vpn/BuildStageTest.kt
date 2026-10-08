@@ -5,9 +5,8 @@ import org.junit.Assert.assertFalse
 import org.junit.Test
 
 class BuildStageTest {
-    @Test
-    fun stageCannotPretendToHaveVPN() {
-        assertEquals("M1", BuildStage.NAME)
-        assertFalse("M1 must not advertise a working VPN", BuildStage.VPN_ENGINE_READY)
+    @Test fun stageDoesNotClaimDeviceAcceptance() {
+        assertEquals("M2-development", BuildStage.NAME)
+        assertFalse("M2 must not claim a verified working VPN", BuildStage.VPN_ENGINE_READY)
     }
 }
