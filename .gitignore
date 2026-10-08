@@ -1,0 +1,21 @@
+# Android / Gradle
+.gradle/
+**/build/
+local.properties
+.idea/
+*.iml
+captures/
+.externalNativeBuild/
+.cxx/
+# Never track secrets and real VPN subscriptions
+*.jks
+*.keystore
+*.p12
+.env
+.env.*
+secrets/
+private-subscriptions/
+*.mobileconfig
+*.apk
+*.aab
+.DS_Store
