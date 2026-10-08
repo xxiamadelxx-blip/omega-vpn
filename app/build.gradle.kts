@@ -12,8 +12,8 @@ android {
         applicationId = "dev.omega.vpn"
         minSdk = 26
         targetSdk = 35
-        versionCode = 2
-        versionName = "0.2.0-m2"
+        versionCode = 3
+        versionName = "0.2.1-auto-free"
     }
 
     buildTypes {
@@ -36,6 +36,7 @@ android {
 
 dependencies {
     implementation(files("libs/libv2ray.aar"))
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.10.2")
     implementation("androidx.core:core-ktx:1.16.0")
     implementation(platform("androidx.compose:compose-bom:2025.03.01"))
     implementation("androidx.activity:activity-compose:1.10.1")
