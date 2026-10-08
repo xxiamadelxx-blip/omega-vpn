@@ -18,7 +18,7 @@
 - Облачная сборка `./gradlew --no-daemon :app:assembleDebug :app:testDebugUnitTest :app:lintDebug`: **PASS**, 13/13 постоянных JVM-тестов, Lint PASS; `BUILD SUCCESSFUL in 1m17s`.
 - Дополнительный временный локальный smoke-test применил реальный производственный `PublicNodeParser.parse` к **этой скачанной подписке**: **PASS, 120 подходящих узлов**, лимит соблюдён. Тестовая скачанная подписка и временный тест не коммитились.
 - Версия собранного APK: `0.2.1-auto-free`; облачный локальный SHA-256: `04578550e64f73cd2c74f540d4f3331c1b59a60fcb6dca991fa3021b0dd60a3e`. Не путать локальный APK и GitHub Actions артефакт.
-- CI: [GitHub Actions 37813879368](https://github.com/xxiamadelxx-blip/omega-vpn/actions/runs/37813879368); проверить статус выполнения отдельно.
+- **CI PASS:** [GitHub Actions 37813879368](https://github.com/xxiamadelxx-blip/omega-vpn/actions/runs/37813879368) на исходном коммите `bf7dfd5`: Android SDK, Go/Xray AAR, Gradle Wrapper, Android APK, все unit-тесты, lint и upload-артефакта завершились успешно. Артефакт `omega-vpn-m2-debug`, ID `11566113308`, архив ZIP SHA-256 `59781f29210275ada9456a62a33c47c1c929b167c8c03d5954a9129d4e10ce8d` (отличается от SHA APK), срок хранения до 2026-10-15T17:10:41Z. Извлеките `app-debug.apk` из артефакта.
 
 ## Ограничения
 
