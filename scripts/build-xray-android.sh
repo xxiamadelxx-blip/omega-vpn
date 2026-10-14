@@ -33,6 +33,13 @@ gomobile init
 (cd "$BUILD_DIR" && gomobile bind -target="${OMEGA_ANDROID_TARGETS:-android/arm64}" -androidapi 26 -trimpath \
   -ldflags='-s -w -buildid= -checklinkname=0' \
   -o "$ROOT/app/libs/libv2ray.aar" .)
-unzip -l "$ROOT/app/libs/libv2ray.aar" | grep -q 'jni/arm64-v8a/libgojni.so'
+# Verify the ABI actually requested by the caller. Android x86_64 uses Go amd64.
+TARGETS="${OMEGA_ANDROID_TARGETS:-android/arm64}"
+if [[ "$TARGETS" == *"android/arm64"* ]]; then
+  unzip -l "$ROOT/app/libs/libv2ray.aar" | grep -q 'jni/arm64-v8a/libgojni.so'
+fi
+if [[ "$TARGETS" == *"android/amd64"* ]]; then
+  unzip -l "$ROOT/app/libs/libv2ray.aar" | grep -q 'jni/x86_64/libgojni.so'
+fi
 sha256sum "$ROOT/app/libs/libv2ray.aar"
 echo "Android Xray AAR ready from commit $CORE_COMMIT"
