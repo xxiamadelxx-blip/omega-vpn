@@ -42,6 +42,17 @@ The probe logs only mode, status, anonymized IP hash, Android VPN transport stat
 
 [Commit afaaf5a](https://github.com/xxiamadelxx-blip/omega-vpn/commit/afaaf5ac59bc37204f0f864e4946b898fece5896) makes the separate-UID Android probe log a distinct `STATUS vpn=0/1` immediately after `ConnectivityManager` returns, **before** potentially blocking HTTPS. On timeout Python now reads that status and indicates whether it was observed, rather than silently defaulting unknown to false. A `blocked_no_direct_fallback` PASS requires `FAIL` HTTPS, affirmative VPN status and a real prior status record.
 
-[Repeat GitHub Actions run #38620668096](https://github.com/xxiamadelxx-blip/omega-vpn/actions/runs/38620668096): **IN PROGRESS at documentation time; no outcome claimed.**
+### Second Android run: PASS (2026-10-14, 19:13 UTC)
+
+[GitHub Actions run #38620668096](https://github.com/xxiamadelxx-blip/omega-vpn/actions/runs/38620668096): **SUCCESS**, real Android 15 API35 x86_64 via Google APIs emulator, x86_64 native Xray JNI, real publicly provided VLESS/Reality node.
+
+- Baseline (no VPN): independent UID HTTPS 200, salted public-IP hash, `vpn_default=false`.
+- Ω VPN: Android consent accepted; `vpn_default=true`, HTTPS 200, **egress IP changed**.
+- Forced upstream node IP outage: emulator firewall rule inserted and verified; independent UID HTTPS **timed out**, `vpn_default=true` observed **before** network request, `probe_status_observed=true`, `baseline_ip_leaked=false`, `blocked_no_direct_fallback=true`.
+- Rule removed in `finally`; **HTTPS tunneled and non-baseline egress recovered on first retry**, `https_recovered_over_vpn=true`.
+- UI disconnect: HTTPS 200, original IP hash restored first retry, `vpn_default=false`, `disconnect_clean=true`.
+- Artifact: [anonymized CI evidence #11921783160](https://github.com/xxiamadelxx-blip/omega-vpn/actions/runs/38620668096/artifacts/11921783160); ZIP SHA-256 `b870241f7c617d09c71354c1811298383c77351c6f7a97443d70be59b38073a9`; retention until 2026-10-21T19:13:35Z.
+
+**Acceptance:** PASS **only for the specific tested upstream unavailability interval** on one Android 15 x86_64 emulator and node. The probe did not observe a direct HTTPS fallback. This is not a general packet-level proof of no DNS/IPv6 leaks, never tested a killed VPN process, and does not establish that the anonymous VPN operator is trustworthy.
 
 Remaining release gates: actual ARM64 phone, crash/kill switch, DNS packet-level leaks, IPv6 handling and Wi-Fi/mobile handoff.
