@@ -50,6 +50,119 @@ def record():
     print(json.dumps(RESULT, ensure_ascii=False), flush=True)
 
 
+
+def _bounds(node):
+    corners = [int(x) for x in re.findall(r"\\d+", node.get("bounds", ""))]
+    if len(corners) != 4:
+        return None
+    return corners
+
+
+def _mid_y(node):
+    b = _bounds(node)
+    return (b[1] + b[3]) // 2 if b else -1
+
+
+def _settings_nodes():
+    return omega.ui()
+
+
+def _find_label(nodes, needle):
+    return next((n for n in nodes
+                 if needle.lower() in (n.get("text", "") + " " +
+                                       n.get("content-desc", "")).lower()), None)
+
+
+def _settings_snapshot(stage):
+    omega.screenshot("lockdown-" + stage)
+    nodes = _settings_nodes()
+    # Record only fixed, non-sensitive UI indicators, not arbitrary Settings text.
+    RESULT["settings_ui_" + stage] = {
+        "nodes": len(nodes),
+        "vpn_page": bool(_find_label(nodes, "VPN")),
+        "omega_entry": bool(_find_label(nodes, "Ω VPN") or
+                            _find_label(nodes, "Omega VPN")),
+        "always_on_toggle": bool(_find_label(nodes, "Always-on VPN")),
+        "block_without_toggle": bool(_find_label(nodes, "Block connections without VPN"))
+    }
+    return nodes
+
+
+def _tap_setting(needle, expect=None):
+    nodes = _settings_nodes()
+    label = _find_label(nodes, needle)
+    if not label:
+        raise RuntimeError("android_settings_missing_" + needle.lower().replace(" ", "_").replace("-", "_"))
+    y = _mid_y(label)
+    switches = [n for n in nodes
+                if ("Switch" in n.get("class", "") or
+                    "CheckBox" in n.get("class", "")) and
+                abs(_mid_y(n) - y) < 58 and _bounds(n)]
+    target = min(switches, key=lambda n: abs(_mid_y(n) - y)) if switches else label
+    if expect is not None and target.get("checked") == ("true" if expect else "false"):
+        return
+    if not omega.click_node(target):
+        raise RuntimeError("android_settings_toggle_click_failed")
+    time.sleep(1)
+    if expect:
+        # Android may show a confirmation dialog for network lockdown.
+        dialog = _settings_nodes()
+        for reply in ("Turn on", "OK", "Allow"):
+            candidate = _find_label(dialog, reply)
+            if candidate and omega.click_node(candidate):
+                time.sleep(1)
+                break
+    refreshed = _settings_nodes()
+    fresh_label = _find_label(refreshed, needle)
+    if not fresh_label:
+        raise RuntimeError("android_settings_toggle_disappeared")
+    y = _mid_y(fresh_label)
+    checked = [n.get("checked") for n in refreshed
+               if ("Switch" in n.get("class", "") or
+                   "CheckBox" in n.get("class", "")) and
+               abs(_mid_y(n) - y) < 58]
+    if expect is not None and checked and ("true" if expect else "false") not in checked:
+        raise RuntimeError("android_settings_toggle_not_applied")
+
+
+def enable_lockdown_via_settings_ui():
+    # Use actual Android Settings UI, not merely Settings.Secure writes.
+    started = shell("am", "start", "-a", "android.settings.VPN_SETTINGS")
+    if started.returncode:
+        raise RuntimeError("android_vpn_settings_intent_failed")
+    time.sleep(3)
+    nodes = _settings_snapshot("vpn-list")
+    entry = _find_label(nodes, "Ω VPN") or _find_label(nodes, "Omega VPN")
+    if not entry:
+        raise RuntimeError("android_settings_omega_vpn_entry_not_found")
+    center_y = _mid_y(entry)
+    candidates = [n for n in nodes if _bounds(n) and
+                  abs(_mid_y(n)-center_y) < 60 and
+                  ("Settings" in n.get("content-desc", "") or
+                   "settings" in n.get("resource-id", "").lower())]
+    if candidates:
+        clicked = omega.click_node(candidates[-1])
+    else:
+        # Android stock VPN Settings row uses a gear on the right.
+        size = shell("wm", "size").stdout
+        m = re.search(r"(\\d+)x(\\d+)", size)
+        if not m:
+            raise RuntimeError("android_settings_screen_dimensions_missing")
+        clicked = shell("input", "tap", str(int(m.group(1))-65),
+                        str(center_y)).returncode == 0
+    if not clicked:
+        raise RuntimeError("android_vpn_settings_gear_click_failed")
+    time.sleep(2)
+    nodes = _settings_snapshot("vpn-options")
+    if not _find_label(nodes, "Always-on VPN"):
+        raise RuntimeError("android_vpn_settings_always_on_toggle_not_found")
+    _tap_setting("Always-on VPN", expect=True)
+    _tap_setting("Block connections without VPN", expect=True)
+    _settings_snapshot("lockdown-enabled")
+    RESULT["lockdown_enabled_via_android_settings_ui"] = True
+    shell("input", "keyevent", "KEYCODE_HOME")
+
+
 def main():
     originals = {}
     try:
@@ -71,23 +184,10 @@ def main():
         if baseline["result"] != "PASS" or baseline.get("vpn_default",False):
             raise RuntimeError("lockdown_test_no_clean_direct_baseline")
 
-        # The shell can configure Android's secure settings on THIS ephemeral
-        # emulator; this is neither a supported API for the app nor a phone fix.
-        # Settings.Secure readback alone does not activate VPN lockdown.
-        # Ask ConnectivityService to apply it, then independently probe.
-        help_result = shell("cmd", "connectivity", "help")
-        RESULT["connectivity_shell_supports_always_on"] = (
-            "set-always-on-vpn" in (help_result.stdout + help_result.stderr)
-        )
-        if not RESULT["connectivity_shell_supports_always_on"]:
-            RESULT["status"] = "INCONCLUSIVE_NO_SUPPORTED_LOCKDOWN_CONTROL"
-            raise RuntimeError("android_connectivity_shell_always_on_unavailable")
-        applied = shell("cmd", "connectivity", "set-always-on-vpn",
-                        "--user", "0", "--package", PKG, "--lockdown", "true")
-        RESULT["connectivity_shell_command_accepted"] = applied.returncode == 0
-        if applied.returncode:
-            raise RuntimeError("android_connectivity_shell_always_on_rejected")
-        time.sleep(5)
+        # Settings.Secure key writes do not notify ConnectivityService.
+        # Change system VPN options through real Android Settings screens.
+        enable_lockdown_via_settings_ui()
+        time.sleep(3)
         RESULT["keys_readback_match"] = (settings_get(KEYS[0]) == PKG and
                                          settings_get(KEYS[1]) == "1")
         if not RESULT["keys_readback_match"]:
@@ -145,15 +245,23 @@ def main():
     finally:
         # Always restore the emulator's old VPN settings, including on failure.
         failures = []
-        if RESULT.get("connectivity_shell_command_accepted",False):
+        if RESULT.get("lockdown_enabled_via_android_settings_ui",False):
             try:
-                previous = originals.get(KEYS[0], "null")
-                shell("cmd", "connectivity", "set-always-on-vpn",
-                      "--user", "0", "--package", previous,
-                      "--lockdown",
-                      "true" if originals.get(KEYS[1])=="1" else "false")
+                shell("am", "start", "-a", "android.settings.VPN_SETTINGS")
+                time.sleep(2)
+                nodes = _settings_nodes()
+                entry = _find_label(nodes, "Ω VPN") or _find_label(nodes, "Omega VPN")
+                if entry:
+                    y = _mid_y(entry)
+                    size = re.search(r"(\\d+)x(\\d+)", shell("wm", "size").stdout)
+                    if size:
+                        shell("input", "tap", str(int(size.group(1))-65), str(y))
+                        time.sleep(2)
+                        _tap_setting("Block connections without VPN", expect=False)
+                        _tap_setting("Always-on VPN", expect=False)
+                shell("input", "keyevent", "KEYCODE_HOME")
             except Exception:
-                failures.append("connectivity_service_restore")
+                failures.append("vpn_settings_ui_restore")
         for key,value in originals.items():
             try:
                 settings_set(key,value)
