@@ -22,6 +22,8 @@ public final class ProbeActivity extends Activity {
         super.onCreate(state);
         final String nonce = getIntent().getStringExtra("nonce");
         final String salt = getIntent().getStringExtra("salt");
+        final String requestedMode = getIntent().getStringExtra("mode");
+        final String mode = requestedMode == null ? "ipv4" : requestedMode;
         new Thread(() -> {
             HttpsURLConnection conn = null;
             String result = "FAIL";
@@ -30,6 +32,9 @@ public final class ProbeActivity extends Activity {
                 if (nonce == null || !nonce.matches("[A-Za-z0-9_]{1,32}") ||
                     salt == null || salt.length() < 12) {
                     throw new IllegalArgumentException("Missing nonce/salt");
+                }
+                if (!mode.equals("ipv4") && !mode.equals("ipv6")) {
+                    throw new IllegalArgumentException("Unknown probe mode");
                 }
                 ConnectivityManager cm = (ConnectivityManager)
                     getSystemService(CONNECTIVITY_SERVICE);
@@ -40,7 +45,10 @@ public final class ProbeActivity extends Activity {
                 // Independent-UID network status BEFORE potentially blocking I/O.
                 // A stuck HTTPS call must not be mistaken for vpn_default=false.
                 Log.i("OMEGA_PROBE", "nonce=" + nonce + " STATUS vpn=" + (vpnDefault ? "1" : "0"));
-                conn = (HttpsURLConnection) new URL("https://api.ipify.org").openConnection();
+                // api6.ipify.org is IPv6-only; this must not silently use IPv4.
+                String url = mode.equals("ipv6") ?
+                    "https://api6.ipify.org" : "https://api.ipify.org";
+                conn = (HttpsURLConnection) new URL(url).openConnection();
                 conn.setConnectTimeout(10000);
                 conn.setReadTimeout(10000);
                 conn.setInstanceFollowRedirects(false);
@@ -57,6 +65,9 @@ public final class ProbeActivity extends Activity {
                     throw new IllegalStateException("IP_BAD_RESPONSE");
                 }
                 String family = ip.contains(":") ? "6" : "4";
+                if (mode.equals("ipv6") && !family.equals("6")) {
+                    throw new IllegalStateException("IPV6_ENDPOINT_RETURNED_IPV4");
+                }
                 // Avoid publishing the emulator's real public IP in GitHub logs.
                 MessageDigest md = MessageDigest.getInstance("SHA-256");
                 byte[] digest = md.digest((salt + ":" + ip).getBytes(StandardCharsets.UTF_8));
