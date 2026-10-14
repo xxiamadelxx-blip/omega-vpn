@@ -1,7 +1,10 @@
 package dev.omega.vpn.probe;
 
 import android.app.Activity;
-import android.os.Bundle;
+import android.os.Bundle
+import android.net.ConnectivityManager
+import android.net.Network
+import android.net.NetworkCapabilities;
 import android.util.Log;
 import java.io.BufferedReader;
 import java.io.InputStreamReader;
@@ -27,6 +30,12 @@ public final class ProbeActivity extends Activity {
                     salt == null || salt.length() < 12) {
                     throw new IllegalArgumentException("Missing nonce/salt");
                 }
+                ConnectivityManager cm = (ConnectivityManager)
+                    getSystemService(CONNECTIVITY_SERVICE);
+                Network network = cm.getActiveNetwork();
+                NetworkCapabilities capabilities = cm.getNetworkCapabilities(network);
+                boolean vpnDefault = capabilities != null &&
+                    capabilities.hasTransport(NetworkCapabilities.TRANSPORT_VPN);
                 conn = (HttpsURLConnection) new URL("https://api.ipify.org").openConnection();
                 conn.setConnectTimeout(10000);
                 conn.setReadTimeout(10000);
@@ -52,7 +61,7 @@ public final class ProbeActivity extends Activity {
                 InetAddress[] dns = InetAddress.getAllByName("www.cloudflare.com");
                 if (dns.length == 0) throw new IllegalStateException("DNS_UNRESOLVED");
                 result = "PASS http=200 family=" + family +
-                         " iphash=" + hash + " dns=PASS";
+                         " iphash=" + hash + " dns=PASS vpn=" + (vpnDefault ? "1" : "0");
             } catch (Throwable error) {
                 result = "FAIL reason=" + error.getClass().getSimpleName();
             } finally {

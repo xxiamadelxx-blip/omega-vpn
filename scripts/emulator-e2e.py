@@ -77,14 +77,15 @@ def probe(nonce, wait=30):
     deadline=time.monotonic()+wait
     while time.monotonic()<deadline:
         logcat=adb("logcat","-d","-s","OMEGA_PROBE:I","*:S").stdout
-        m=re.search(r"nonce="+re.escape(nonce)+r" (PASS http=200 family=[46] iphash=[a-f0-9]{64} dns=PASS|FAIL reason=\w+)",logcat)
+        m=re.search(r"nonce="+re.escape(nonce)+r" (PASS http=200 family=[46] iphash=[a-f0-9]{64} dns=PASS vpn=[01]|FAIL reason=\w+)",logcat)
         if m:
             line=m.group(1)
             if line.startswith("PASS"):
                 return {"result":"PASS","http":200,
                         "ip_fingerprint":re.search(r"iphash=([a-f0-9]+)",line).group(1),
                         "ip_family":re.search(r"family=([46])",line).group(1),
-                        "dns":"PASS"}
+                        "dns":"PASS",
+                        "vpn_default":re.search(r"vpn=([01])",line).group(1)=="1"}
             return {"result":"FAIL","reason":line.split("reason=")[1]}
         time.sleep(2)
     return {"result":"FAIL","reason":"timeout"}
@@ -124,6 +125,8 @@ def main():
                 ((" ("+baseline.get("reason","")+")") if baseline["result"]=="FAIL" else ""))
             if baseline["result"]=="PASS": break
         RESULT["baseline"]=baseline
+        if baseline.get("vpn_default",False):
+            raise RuntimeError("unexpected_preexisting_default_vpn_before_connection")
         if baseline["result"]!="PASS":
             detail=adb("shell","dumpsys","connectivity",timeout=30).stdout
             RESULT["emulator"]["connectivity_service_present"]=bool(detail)
@@ -161,14 +164,15 @@ def main():
                     break
             time.sleep(9)
             screenshot("03-attempt-"+str(attempt))
-            active=vpn_is_active()
             result=probe("AFTER_"+str(attempt))
+            active=result.get("vpn_default",False)
             changed=(result["result"]=="PASS" and
                      result.get("ip_fingerprint")!=baseline.get("ip_fingerprint"))
             record={"node_index":attempt,"android_vpn_active":active,
                     "https":result["result"],
                     "dns":result.get("dns","NOT_PROVEN"),
                     "public_ip_changed":bool(changed),
+                    "android_vpn_history_hint":vpn_is_active(),
                     "error":result.get("reason")}
             RESULT["attempts"].append(record)
             log("Node "+str(attempt)+": VPN="+str(active)+
@@ -185,7 +189,8 @@ def main():
                     time.sleep(4)
                     after_disconnect=probe("DISCONNECT_"+str(attempt_off),wait=24)
                     restored=(after_disconnect["result"]=="PASS" and
-                              after_disconnect.get("ip_fingerprint")==baseline.get("ip_fingerprint"))
+                              after_disconnect.get("ip_fingerprint")==baseline.get("ip_fingerprint") and
+                              not after_disconnect.get("vpn_default",False))
                     RESULT["disconnect_probe_attempts"].append({
                         "attempt":attempt_off,
                         "https":after_disconnect["result"],
@@ -203,22 +208,31 @@ def main():
                 break
             # A failed node must be disconnected before "Next server" is visible.
             # Never carry stale TUN state into the next attempt.
-            if not click("Отключить VPN",20):
-                raise RuntimeError("failed_node_disconnect_button_not_available")
+            clicked_disconnect=click("Отключить VPN",6)
+            if not clicked_disconnect:
+                # If the native loop exited on its own, the TUN may already be closed.
+                already_stopped=any(
+                    "Подключиться к выбранному узлу" in
+                    n.get("text","")+n.get("content-desc","") for n in ui())
+                if not already_stopped:
+                    raise RuntimeError("failed_node_not_disconnectable_or_stopped")
+                log("Node "+str(attempt)+" already disconnected after native failure")
             restored=False
             last_recovery={"result":"FAIL","reason":"not_attempted"}
             for recovery_attempt in range(1,5):
                 time.sleep(4)
                 last_recovery=probe("RECOVER_"+str(attempt)+"_"+str(recovery_attempt),wait=25)
                 restored=(last_recovery["result"]=="PASS" and
-                          last_recovery.get("ip_fingerprint")==baseline.get("ip_fingerprint"))
+                          last_recovery.get("ip_fingerprint")==baseline.get("ip_fingerprint") and
+                          not last_recovery.get("vpn_default",False))
                 log("Node "+str(attempt)+" disconnect recovery "+str(recovery_attempt)+
                     ": HTTPS="+last_recovery["result"]+" original_IP="+str(restored))
                 if restored: break
             RESULT.setdefault("failed_node_recovery",[]).append({
                 "node_index":attempt,
                 "direct_https":last_recovery["result"],
-                "baseline_ip_restored":bool(restored)
+                "baseline_ip_restored":bool(restored),
+                "already_stopped_in_ui":not clicked_disconnect
             })
             if not restored:
                 raise RuntimeError("failed_node_vpn_disconnect_failed")

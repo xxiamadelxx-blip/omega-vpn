@@ -8,6 +8,7 @@ import android.content.pm.ServiceInfo
 import android.net.VpnService
 import android.os.Build
 import android.os.ParcelFileDescriptor
+import android.util.Log
 import androidx.core.app.NotificationCompat
 import libv2ray.CoreCallbackHandler
 import libv2ray.CoreController
@@ -36,6 +37,7 @@ class OmegaVpnService : VpnService() {
     private var tunnel: ParcelFileDescriptor? = null
     @Volatile private var stopping = false
     @Volatile private var running = false
+    @Volatile private var failed = false
 
     override fun onCreate() {
         super.onCreate()
@@ -51,6 +53,7 @@ class OmegaVpnService : VpnService() {
         }
         if (intent.action != CONNECT || running || stopping) return START_NOT_STICKY
         foreground()
+        failed = false
         running = true
         val link = intent.getStringExtra(PROFILE)
         intent.removeExtra(PROFILE)
@@ -75,6 +78,7 @@ class OmegaVpnService : VpnService() {
 
     private fun startTunnel(link: String?) {
         var unownedFd: ParcelFileDescriptor? = null
+        var stage = "parse_and_permission"
         try {
             if (stopping) return
             VpnRuntime.report(VpnRuntime.State.CONNECTING,"Подготовка VPN…")
@@ -82,6 +86,7 @@ class OmegaVpnService : VpnService() {
             if (prepare(this) != null) error("VPN permission revoked")
             if (stopping) return
 
+            stage = "establish_tun"
             val fd = Builder().setSession("Ω VPN").setMtu(1500)
                 .addAddress("172.20.10.2",30).addRoute("0.0.0.0",0)
                 .addDnsServer("1.1.1.1")
@@ -96,7 +101,9 @@ class OmegaVpnService : VpnService() {
             }
 
             if (stopping) return
+            stage = "initialize_core"
             Libv2ray.initCoreEnv(filesDir.absolutePath,"")
+            stage = "create_controller"
             val native = Libv2ray.newCoreController(object: CoreCallbackHandler {
                 override fun startup(): Long {
                     if (!stopping) {
@@ -117,10 +124,15 @@ class OmegaVpnService : VpnService() {
                 controller = native
             }
             if (stopping) return
+            stage = "start_native_loop"
             native.startLoop(XrayConfigFactory.build(profile),fd.fd)
             if (!stopping) error("Native Xray loop exited unexpectedly")
-        } catch (_: Throwable) {
+        } catch (error: Throwable) {
             if (!stopping) {
+                failed = true
+                // Keep diagnostics free of server addresses, UUIDs, and profile links.
+                Log.e("OMEGA_TUN", "vpn_failure stage=" + stage +
+                    " exception_type=" + error.javaClass.simpleName)
                 VpnRuntime.report(VpnRuntime.State.ERROR,
                     "Ошибка VPN-туннеля. Проверьте сервер или соединение")
                 disconnectNow(reportDisconnected = false)
@@ -161,6 +173,7 @@ class OmegaVpnService : VpnService() {
     }
 
     override fun onRevoke() {
+        failed = true
         disconnectNow(reportDisconnected = false)
         VpnRuntime.report(VpnRuntime.State.ERROR,"Android отозвал разрешение VPN")
         stopSelf()
@@ -168,7 +181,7 @@ class OmegaVpnService : VpnService() {
 
     override fun onDestroy() {
         // Do not queue disconnect behind blocking startLoop().
-        disconnectNow()
+        disconnectNow(reportDisconnected = !failed)
         worker.shutdownNow()
         super.onDestroy()
     }
