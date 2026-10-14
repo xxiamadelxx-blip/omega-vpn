@@ -176,19 +176,30 @@ def main():
             if active and changed and result.get("dns")=="PASS":
                 RESULT["vpn_verified"]=True
                 RESULT["disconnect_clicked"]=click("Отключить VPN",15)
-                time.sleep(6)
-                # Full dumpsys connectivity includes historical NetworkAgentInfo entries;
-                # a substring TRANSPORT_VPN is not proof of a LIVE VPN after teardown.
-                # Routing back to the original IP from the second Android UID is decisive.
-                after_disconnect=probe("DISCONNECT",wait=32)
+                # A VPN fd may close asynchronously while Android's network agent
+                # recomputes the default route. Verify return to BASELINE from
+                # the independent probe app, not from Omega's excluded UID.
+                RESULT["disconnect_probe_attempts"]=[]
+                restored=False
+                for attempt_off in range(1,6):
+                    time.sleep(4)
+                    after_disconnect=probe("DISCONNECT_"+str(attempt_off),wait=24)
+                    restored=(after_disconnect["result"]=="PASS" and
+                              after_disconnect.get("ip_fingerprint")==baseline.get("ip_fingerprint"))
+                    RESULT["disconnect_probe_attempts"].append({
+                        "attempt":attempt_off,
+                        "https":after_disconnect["result"],
+                        "baseline_ip_restored":bool(restored),
+                        "error":after_disconnect.get("reason")
+                    })
+                    log("VPN shutdown probe "+str(attempt_off)+
+                        ": HTTPS="+after_disconnect["result"]+
+                        " baseline_ip_restored="+str(restored))
+                    if restored: break
                 RESULT["disconnect_https"]=after_disconnect["result"]
-                RESULT["disconnect_baseline_ip_restored"]=(
-                    after_disconnect["result"]=="PASS" and
-                    after_disconnect.get("ip_fingerprint")==baseline.get("ip_fingerprint"))
+                RESULT["disconnect_baseline_ip_restored"]=bool(restored)
                 RESULT["disconnect_vpn_history_hint"]=vpn_is_active()
-                RESULT["disconnect_clean"]=(
-                    RESULT["disconnect_clicked"] and
-                    RESULT["disconnect_baseline_ip_restored"])
+                RESULT["disconnect_clean"]=(RESULT["disconnect_clicked"] and restored)
                 break
             if not click("Отключить VPN",14):
                 adb("shell","am","force-stop","dev.omega.vpn")

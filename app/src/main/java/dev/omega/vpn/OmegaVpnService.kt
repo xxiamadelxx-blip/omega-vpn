@@ -14,7 +14,13 @@ import libv2ray.CoreController
 import libv2ray.Libv2ray
 import java.util.concurrent.Executors
 
-/** Native Xray TUN connector. Device-level network acceptance is still required. */
+/**
+ * Android TUN must close immediately on disconnect.
+ *
+ * The native startLoop() may block until stopLoop() returns; queuing stop on its
+ * single-thread executor would deadlock the VPN teardown. No direct/cleartext
+ * fallback is installed.
+ */
 class OmegaVpnService : VpnService() {
     companion object {
         const val CONNECT = "dev.omega.vpn.CONNECT"
@@ -23,11 +29,13 @@ class OmegaVpnService : VpnService() {
         private const val CHANNEL = "omega_tunnel"
         private const val NOTIFICATION_ID = 100
     }
+
     private val worker = Executors.newSingleThreadExecutor()
+    private val lifecycleLock = Any()
     private var controller: CoreController? = null
     private var tunnel: ParcelFileDescriptor? = null
+    @Volatile private var stopping = false
     @Volatile private var running = false
-    @Volatile private var failed = false
 
     override fun onCreate() {
         super.onCreate()
@@ -36,14 +44,14 @@ class OmegaVpnService : VpnService() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        if (intent?.action == DISCONNECT || intent == null) {
+        if (intent == null || intent.action == DISCONNECT) {
+            disconnectNow()
             stopSelf()
             return START_NOT_STICKY
         }
-        if (intent.action != CONNECT || running) return START_NOT_STICKY
+        if (intent.action != CONNECT || running || stopping) return START_NOT_STICKY
         foreground()
         running = true
-        failed = false
         val link = intent.getStringExtra(PROFILE)
         intent.removeExtra(PROFILE)
         worker.execute { startTunnel(link) }
@@ -51,14 +59,14 @@ class OmegaVpnService : VpnService() {
     }
 
     private fun foreground() {
-        val pending = PendingIntent.getService(this,0,Intent(this,OmegaVpnService::class.java)
-            .setAction(DISCONNECT),PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
-        val notification = NotificationCompat.Builder(this,CHANNEL)
+        val pending = PendingIntent.getService(this, 0, Intent(this, OmegaVpnService::class.java)
+            .setAction(DISCONNECT), PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
+        val notification = NotificationCompat.Builder(this, CHANNEL)
             .setSmallIcon(android.R.drawable.stat_sys_warning)
             .setContentTitle("Ω VPN")
             .setContentText("Подготовка туннеля")
             .setOngoing(true)
-            .addAction(android.R.drawable.ic_menu_close_clear_cancel,"Отключить",pending)
+            .addAction(android.R.drawable.ic_menu_close_clear_cancel, "Отключить", pending)
             .build()
         if (Build.VERSION.SDK_INT >= 34) {
             startForeground(NOTIFICATION_ID,notification,ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE)
@@ -66,58 +74,102 @@ class OmegaVpnService : VpnService() {
     }
 
     private fun startTunnel(link: String?) {
+        var unownedFd: ParcelFileDescriptor? = null
         try {
+            if (stopping) return
             VpnRuntime.report(VpnRuntime.State.CONNECTING,"Подготовка VPN…")
-            val p = VlessProfile.parse(link ?: "")
+            val profile = VlessProfile.parse(link ?: "")
             if (prepare(this) != null) error("VPN permission revoked")
+            if (stopping) return
+
             val fd = Builder().setSession("Ω VPN").setMtu(1500)
                 .addAddress("172.20.10.2",30).addRoute("0.0.0.0",0)
                 .addDnsServer("1.1.1.1")
                 .addAddress("fd00:1111:2222::2",126).addRoute("::",0)
                 .apply { addDisallowedApplication(packageName) }
                 .establish() ?: error("Android TUN unavailable")
-            tunnel = fd
+            unownedFd = fd
+            synchronized(lifecycleLock) {
+                if (stopping) return
+                tunnel = fd
+                unownedFd = null
+            }
+
+            if (stopping) return
             Libv2ray.initCoreEnv(filesDir.absolutePath,"")
             val native = Libv2ray.newCoreController(object: CoreCallbackHandler {
                 override fun startup(): Long {
-                    VpnRuntime.report(VpnRuntime.State.CORE_STARTED,
-                        "Xray запущен. Проверка IP/DNS обязательна")
+                    if (!stopping) {
+                        VpnRuntime.report(VpnRuntime.State.CORE_STARTED,
+                            "Xray запущен. Проверка IP/DNS обязательна")
+                    }
                     return 0
                 }
-                override fun shutdown(): Long {
-                    VpnRuntime.report(VpnRuntime.State.DISCONNECTED,"Отключено")
-                    return 0
-                }
+                override fun shutdown(): Long = 0
                 override fun onEmitStatus(code: Long, message: String?): Long = 0
             })
-            controller = native
-            // Go gomobile binding requires int (not long).
-            native.startLoop(XrayConfigFactory.build(p),fd.fd)
+            synchronized(lifecycleLock) {
+                if (stopping) {
+                    // The service was disconnected while JNI initialized.
+                    // No startLoop() can be invoked after cancellation.
+                    return
+                }
+                controller = native
+            }
+            if (stopping) return
+            native.startLoop(XrayConfigFactory.build(profile),fd.fd)
+            if (!stopping) error("Native Xray loop exited unexpectedly")
         } catch (_: Throwable) {
-            failed = true
-            VpnRuntime.report(VpnRuntime.State.ERROR,"Ошибка запуска VPN. Проверьте ключ или сеть")
-            stopSelf()
+            if (!stopping) {
+                VpnRuntime.report(VpnRuntime.State.ERROR,
+                    "Ошибка VPN-туннеля. Проверьте сервер или соединение")
+                disconnectNow(reportDisconnected = false)
+                stopSelf()
+            }
+        } finally {
+            // If cancelled in the window between TUN establishment and ownership,
+            // the descriptor must never leak.
+            try { unownedFd?.close() } catch (_: Exception) {}
         }
     }
 
-    private fun teardown() {
-        try { controller?.stopLoop() } catch (_: Exception) { }
-        controller = null
-        try { tunnel?.close() } catch (_: Exception) { }
-        tunnel = null
-        running = false
-        if (!failed) VpnRuntime.report(VpnRuntime.State.DISCONNECTED,"Не подключено")
+    /**
+     * Close the TUN on the caller (Android service) thread immediately.
+     * Never wait for native startLoop() to return before closing Android's
+     * file descriptor: that loop can be precisely what prevents worker progress.
+     */
+    private fun disconnectNow(reportDisconnected: Boolean = true) {
+        val fd: ParcelFileDescriptor?
+        val native: CoreController?
+        synchronized(lifecycleLock) {
+            stopping = true
+            fd = tunnel
+            tunnel = null
+            native = controller
+            controller = null
+            running = false
+        }
+        try { fd?.close() } catch (_: Exception) {}
+        if (native != null) {
+            Thread({
+                try { native.stopLoop() } catch (_: Throwable) {}
+            }, "omega-native-stop").start()
+        }
+        if (reportDisconnected) {
+            VpnRuntime.report(VpnRuntime.State.DISCONNECTED,"VPN отключён")
+        }
     }
 
     override fun onRevoke() {
-        failed = true
-        VpnRuntime.report(VpnRuntime.State.ERROR,"VPN-разрешение было отозвано")
+        disconnectNow(reportDisconnected = false)
+        VpnRuntime.report(VpnRuntime.State.ERROR,"Android отозвал разрешение VPN")
         stopSelf()
     }
+
     override fun onDestroy() {
-        // Ordered behind startTunnel on the same worker, avoids close/use race.
-        worker.execute { teardown() }
-        worker.shutdown()
+        // Do not queue disconnect behind blocking startLoop().
+        disconnectNow()
+        worker.shutdownNow()
         super.onDestroy()
     }
 }
