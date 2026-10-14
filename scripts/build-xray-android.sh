@@ -27,12 +27,37 @@ git -C "$BUILD_DIR" checkout -q --detach FETCH_HEAD
 actual="$(git -C "$BUILD_DIR" rev-parse HEAD)"
 test "$actual" = "$CORE_COMMIT" || { echo "Core commit mismatch"; exit 3; }
 
-go install "golang.org/x/mobile/cmd/gomobile@$MOBILE_VERSION"
-go install "golang.org/x/mobile/cmd/gobind@$MOBILE_VERSION"
-gomobile init
-(cd "$BUILD_DIR" && gomobile bind -target="${OMEGA_ANDROID_TARGETS:-android/arm64}" -androidapi 26 -trimpath \
-  -ldflags='-s -w -buildid= -checklinkname=0' \
-  -o "$ROOT/app/libs/libv2ray.aar" .)
+# Network and Go checksum servers sometimes reset HTTP/2 streams on CI.
+# Retry transient failures, but NEVER bypass go.sum / GOSUMDB verification.
+retry_network() {
+  local attempt
+  for attempt in 1 2 3; do
+    if "$@"; then return 0; fi
+    if [[ "$attempt" -eq 3 ]]; then
+      echo "Failed after 3 attempts: $1" >&2
+      return 1
+    fi
+    echo "Transient Go tool/download error; retry $((attempt + 1))/3" >&2
+    sleep "$((attempt * 8))"
+  done
+}
+retry_network go install "golang.org/x/mobile/cmd/gomobile@$MOBILE_VERSION"
+retry_network go install "golang.org/x/mobile/cmd/gobind@$MOBILE_VERSION"
+retry_network gomobile init
+for attempt in 1 2 3; do
+  rm -f "$ROOT/app/libs/libv2ray.aar"
+  if (cd "$BUILD_DIR" && gomobile bind -target="${OMEGA_ANDROID_TARGETS:-android/arm64}" -androidapi 26 -trimpath \
+    -ldflags='-s -w -buildid= -checklinkname=0' \
+    -o "$ROOT/app/libs/libv2ray.aar" .); then
+    break
+  fi
+  if [[ "$attempt" -eq 3 ]]; then
+    echo "Go/mobile AAR build failed after 3 attempts" >&2
+    exit 4
+  fi
+  echo "Transient dependency or compiler failure; rebuild retry $((attempt + 1))/3" >&2
+  sleep "$((attempt * 8))"
+done
 # Verify the ABI actually requested by the caller. Android x86_64 uses Go amd64.
 TARGETS="${OMEGA_ANDROID_TARGETS:-android/arm64}"
 if [[ "$TARGETS" == *"android/arm64"* ]]; then
