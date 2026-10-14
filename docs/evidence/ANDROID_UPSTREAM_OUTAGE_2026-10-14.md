@@ -29,4 +29,19 @@ The probe logs only mode, status, anonymized IP hash, Android VPN transport stat
 
 ## Results
 
-**Pending actual completed workflow**. Update this section only from real Android CI logs and artifact evidence.
+### First Android run: INCONCLUSIVE (2026-10-14)
+
+[Run #38618701510](https://github.com/xxiamadelxx-blip/omega-vpn/actions/runs/38618701510) was **FAIL** as a whole:
+
+- **PASS:** Android 15 x86_64 started a real default VPN; separate UID HTTPS=200; public IP changed.
+- **OBSERVED:** after emulator firewall blocked the selected VLESS server's egress IP, the probe timed out and did not report any successful direct HTTPS.
+- **UNPROVEN:** `vpn_default_during_failure=false` was a **test harness default on probe timeout**, not a completed `ConnectivityManager` measurement. Therefore it cannot prove that the VPN dropped, nor can the timeout alone prove fail-closed.
+- **BLOCKER:** `proxy_outage_fail_closed_not_demonstrated`. See [anonymized evidence](https://github.com/xxiamadelxx-blip/omega-vpn/actions/runs/38618701510/artifacts/11921277209). This failure must not be relabelled PASS.
+
+### Instrumentation correction and re-test
+
+[Commit afaaf5a](https://github.com/xxiamadelxx-blip/omega-vpn/commit/afaaf5ac59bc37204f0f864e4946b898fece5896) makes the separate-UID Android probe log a distinct `STATUS vpn=0/1` immediately after `ConnectivityManager` returns, **before** potentially blocking HTTPS. On timeout Python now reads that status and indicates whether it was observed, rather than silently defaulting unknown to false. A `blocked_no_direct_fallback` PASS requires `FAIL` HTTPS, affirmative VPN status and a real prior status record.
+
+[Repeat GitHub Actions run #38620668096](https://github.com/xxiamadelxx-blip/omega-vpn/actions/runs/38620668096): **IN PROGRESS at documentation time; no outcome claimed.**
+
+Remaining release gates: actual ARM64 phone, crash/kill switch, DNS packet-level leaks, IPv6 handling and Wi-Fi/mobile handoff.
