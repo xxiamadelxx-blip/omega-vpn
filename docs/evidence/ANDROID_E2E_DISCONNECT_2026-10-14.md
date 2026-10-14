@@ -64,3 +64,16 @@ Further changes:
 **Independent cloud build:** From `59f34f0` via `./gradlew --no-daemon --console=plain :app:assembleDebug :probe:assembleDebug :app:testDebugUnitTest`, PASS (73 actionable tasks; all successful, 16/16 unit tests). From `6da35c0` the Python script passes `python3 -m py_compile`. This is static/build verification only.
 
 **Latest Android E2E (pending as of documenting):** [run 38609586941](https://github.com/xxiamadelxx-blip/omega-vpn/actions/runs/38609586941). An observed absence of IP changes or `vpn_default=0` still means FAIL, even if HTTPS=PASS. Existing issues: robust switch/reconnect, DNS/IPv6 leak tests, Android phone ARM64 acceptance, failure kill switch.
+
+
+## 2026-10-14: ROOT CAUSE after strict active-network probe
+
+[Android E2E run 38609586941](https://github.com/xxiamadelxx-blip/omega-vpn/actions/runs/38609586941): **FAIL but useful diagnostic success**. All four anonymous free nodes attempted with fresh direct connection between each one, baseline restored successfully each time.
+
+- All four attempts: HTTPS 200, `public_ip_changed=false`, `vpn_default=false`, UI did not display Connected, and old `dumpsys connectivity` substring `vpn_history_hint=true`. Thus **all HTTPS results were direct, not evidence of VPN tunnelling**.
+- Each attempt logged sanitized native `vpn_failure stage=start_native_loop exception_type=IllegalStateException`.
+- Reading the new Kotlin source established that **we introduced this exception ourselves** immediately after a normal return from `native.startLoop()`, with `if (!stopping) error("Native Xray loop exited unexpectedly")`. This incorrect assumption (treating `startLoop` as obligatorily blocking) immediately disconnected the newly established Android VPN. It explains why the earlier run (before our change) once achieved a different public IP, while subsequent runs did not. This is a root cause of these failed later attempts, NOT proof that the original Disconnect bug was repaired.
+- The earlier single-thread start/stop deadlock was a hypothesis, not proven: the native `startLoop` returned normally in these real tests. The new immediate TUN-close path remains useful for prompt shutdown but its effectiveness must be measured on Android.
+- The correct action was committed as [7ebc0ec](https://github.com/xxiamadelxx-blip/omega-vpn/commit/7ebc0ec098066e6231b3341dcf5853ffddb51c15): remove the erroneous exception on successful nonblocking `startLoop` return; keep TUN and native controller open until explicit disconnect/revoke.
+- **Latest full emulator rerun:** [GitHub Actions 38611503072](https://github.com/xxiamadelxx-blip/omega-vpn/actions/runs/38611503072), pending while this evidence was recorded. Do **not** report pass until confirmed: criteria are default network VPN=true **and** egress IP changed with HTTPS, followed by normal disconnect where VPN=false and original IP restored.
+- Important remaining gaps: kill switch on unexpected upstream failure, DNS/IPv6 leaks, real ARM64 phone network changes, provenance of anonymous VPN nodes.
