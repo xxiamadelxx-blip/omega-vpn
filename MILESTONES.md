@@ -38,6 +38,9 @@
 - [x] Пройдены локальные `assembleDebug`, `testDebugUnitTest` (7/7) и `lintDebug` (ошибок нет); архив содержит `lib/arm64-v8a/libgojni.so`.
 - [x] REA/JADX подтвердил `OmegaVpnService`, `BIND_VPN_SERVICE` и тип `specialUse` в фактическом APK.
 - [ ] На настоящем OnePlus Nord 3 проверено, что Android принимает разрешение, запускает TUN, core начинает передачу IP-пакетов, HTTPS проходит через сервер и исходящий IP меняется.
+- [x] **Эмулятор Android 15 API35 x86_64 (частичный M2 E2E):** [run #38594961970](https://github.com/xxiamadelxx-blip/omega-vpn/actions/runs/38594961970) подтвердил системный VPN, HTTPS/DNS-резолвинг из независимого UID и смену публичного IP. **FAIL:** после отключения исходный IP не восстановился. Не считать M2 закрытым.
+- [x] **Гипотеза о блокировке stopLoop/startLoop исправлена в коде:** [commit 425d7c1](https://github.com/xxiamadelxx-blip/omega-vpn/commit/425d7c12e9ef4caf90062dc08c7e4e3ba3a9f65c); проверка Android ARM64 APK 16/16 unit tests + Lint PASS. [Протокол](docs/evidence/ANDROID_E2E_DISCONNECT_2026-10-14.md).
+- [ ] **Регрессия на Android 15:** повторный [run #38607129477](https://github.com/xxiamadelxx-blip/omega-vpn/actions/runs/38607129477) подтвердил полноценный возврат маршрута после закрытия TUN; до получения журналов **NOT VERIFIED**.
 - [ ] Проверены отключение, отзыв разрешения, DNS/IPv6 на двух типах сетей, отсутствие прямого обходного выхода при потере узла.
 
 **M2 status: IN PROGRESS / NOT ACCEPTED.** Успешная компиляция нативного движка **не равна** работающему VPN. Отчёт: [M2_NATIVE_BUILD_2026-10-08.md](docs/evidence/M2_NATIVE_BUILD_2026-10-08.md).
