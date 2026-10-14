@@ -1,9 +1,9 @@
 package dev.omega.vpn.probe;
 
 import android.app.Activity;
-import android.os.Bundle
-import android.net.ConnectivityManager
-import android.net.Network
+import android.os.Bundle;
+import android.net.ConnectivityManager;
+import android.net.Network;
 import android.net.NetworkCapabilities;
 import android.util.Log;
 import java.io.BufferedReader;
