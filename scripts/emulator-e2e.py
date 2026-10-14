@@ -113,10 +113,12 @@ def fault_injection_selected_vless_endpoint(host, baseline_ip_hash):
         leaked = (blocked.get("result") == "PASS" and
                   blocked.get("ip_fingerprint") == baseline_ip_hash)
         still_vpn = blocked.get("vpn_default", False)
-        protected = blocked.get("result") == "FAIL" and still_vpn
+        protected = (blocked.get("result") == "FAIL" and still_vpn and
+                     blocked.get("probe_status_observed", False))
         RESULT["upstream_failure"].update({
             "independent_uid_probe": blocked.get("result"),
             "vpn_default_during_failure": bool(still_vpn),
+            "probe_status_observed": bool(blocked.get("probe_status_observed", False)),
             "baseline_ip_leaked": bool(leaked),
             "blocked_no_direct_fallback": bool(protected),
             "error_class": blocked.get("reason") if blocked["result"] == "FAIL" else None
@@ -165,8 +167,12 @@ def probe(nonce, wait=30):
     if launched.returncode:
         return {"result":"FAIL","reason":"probe_activity_start"}
     deadline=time.monotonic()+wait
+    status_vpn = None
     while time.monotonic()<deadline:
         logcat=adb("logcat","-d","-s","OMEGA_PROBE:I","*:S").stdout
+        status = re.search(r"nonce="+re.escape(nonce)+r" STATUS vpn=([01])", logcat)
+        if status:
+            status_vpn = status.group(1) == "1"
         m=re.search(r"nonce="+re.escape(nonce)+r" (PASS http=200 family=[46] iphash=[a-f0-9]{64} dns=PASS vpn=[01]|FAIL reason=\w+ vpn=[01])",logcat)
         if m:
             line=m.group(1)
@@ -177,9 +183,12 @@ def probe(nonce, wait=30):
                         "dns":"PASS",
                         "vpn_default":re.search(r"vpn=([01])",line).group(1)=="1"}
             return {"result":"FAIL","reason":re.search(r"reason=(\w+)",line).group(1),
-                    "vpn_default":re.search(r"vpn=([01])",line).group(1)=="1"}
+                    "vpn_default":re.search(r"vpn=([01])",line).group(1)=="1",
+                    "probe_status_observed": True}
         time.sleep(2)
-    return {"result":"FAIL","reason":"timeout"}
+    return {"result":"FAIL","reason":"timeout",
+            "vpn_default":status_vpn if status_vpn is not None else False,
+            "probe_status_observed":status_vpn is not None}
 
 def vpn_is_active():
     dump=adb("shell","dumpsys","connectivity",timeout=40).stdout

@@ -37,6 +37,9 @@ public final class ProbeActivity extends Activity {
                 NetworkCapabilities capabilities = cm.getNetworkCapabilities(network);
                 vpnDefault = capabilities != null &&
                     capabilities.hasTransport(NetworkCapabilities.TRANSPORT_VPN);
+                // Independent-UID network status BEFORE potentially blocking I/O.
+                // A stuck HTTPS call must not be mistaken for vpn_default=false.
+                Log.i("OMEGA_PROBE", "nonce=" + nonce + " STATUS vpn=" + (vpnDefault ? "1" : "0"));
                 conn = (HttpsURLConnection) new URL("https://api.ipify.org").openConnection();
                 conn.setConnectTimeout(10000);
                 conn.setReadTimeout(10000);
