@@ -159,11 +159,14 @@ def screenshot(name):
     except Exception:
         pass
 
-def probe(nonce, wait=30):
+def probe(nonce, wait=30, mode="ipv4"):
+    # Force IPv6 via an AAAA-only HTTPS destination on an independent Android UID.
+    if mode not in ("ipv4", "ipv6"):
+        raise ValueError("unsupported_probe_mode")
     adb("logcat","-c")
     adb("shell","am","force-stop","dev.omega.vpn.probe")
     launched=adb("shell","am","start","-n","dev.omega.vpn.probe/.ProbeActivity",
-                 "--es","nonce",nonce,"--es","salt",SALT)
+                 "--es","nonce",nonce,"--es","salt",SALT,"--es","mode",mode)
     if launched.returncode:
         return {"result":"FAIL","reason":"probe_activity_start"}
     deadline=time.monotonic()+wait
@@ -233,6 +236,17 @@ def main():
             RESULT["emulator"]["has_default_network"]=("DefaultNetwork" in detail)
             raise RuntimeError("emulator_baseline_https_failed_after_10_retries")
 
+        # Direct IPv6 baseline is useful only if the emulator has IPv6 egress;
+        # unsupported IPv6 is an INCONCLUSIVE result, never a privacy PASS.
+        baseline_ipv6 = probe("BASELINE_IPV6",wait=24,mode="ipv6")
+        RESULT["ipv6"] = {
+            "baseline":baseline_ipv6["result"],
+            "baseline_error":baseline_ipv6.get("reason"),
+            "baseline_ipv6_available":bool(
+                baseline_ipv6["result"] == "PASS" and
+                baseline_ipv6.get("ip_family") == "6")
+        }
+        log("IPv6-only direct baseline: " + baseline_ipv6["result"])
         adb("shell","am","start","-n","dev.omega.vpn/.MainActivity")
         time.sleep(4)
         screenshot("01-omega")
@@ -296,6 +310,34 @@ def main():
                 " HTTPS="+str(record["https"])+" IP_changed="+str(changed))
             if active and changed and result.get("dns")=="PASS":
                 RESULT["vpn_verified"]=True
+                # Test a real IPv6-only HTTPS destination from the independent
+                # UID; successful IPv4 and dual-stack DNS prove nothing about IPv6.
+                v6 = probe("TUNNEL_IPV6",wait=28,mode="ipv6")
+                baseline_ipv6_ok = RESULT["ipv6"]["baseline_ipv6_available"]
+                leaked = (
+                    baseline_ipv6_ok and v6["result"] == "PASS" and
+                    v6.get("ip_fingerprint") == baseline_ipv6.get("ip_fingerprint")
+                )
+                unprotected_success = (
+                    v6["result"] == "PASS" and not v6.get("vpn_default",False)
+                )
+                tunneled = (
+                    v6["result"] == "PASS" and v6.get("ip_family") == "6" and
+                    v6.get("vpn_default",False) and not leaked
+                )
+                RESULT["ipv6"].update({
+                    "vpn_ipv6_https":v6["result"],
+                    "vpn_ipv6_transport":v6.get("vpn_default",False),
+                    "vpn_ipv6_error":v6.get("reason"),
+                    "direct_ipv6_leak_detected":bool(leaked or unprotected_success),
+                    "ipv6_tunneled_https_verified":bool(tunneled),
+                    "status":("PASS_TUNNELED" if tunneled else
+                              "LEAK" if leaked or unprotected_success else
+                              "INCONCLUSIVE_NO_IPV6_CONNECTIVITY")
+                })
+                log("IPv6-only VPN probe: " + RESULT["ipv6"]["status"])
+                if leaked or unprotected_success:
+                    raise RuntimeError("CRITICAL_direct_ipv6_egress_leak")
                 # Each attempt may choose a different node. The initial UI host
                 # is retained only for attempt 1; later candidates must be read.
                 if attempt > 1:
