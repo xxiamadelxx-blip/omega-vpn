@@ -113,11 +113,22 @@ def main():
         adb("shell","pm","grant","dev.omega.vpn","android.permission.POST_NOTIFICATIONS")
         adb("shell","input","keyevent","KEYCODE_WAKEUP")
         adb("shell","wm","dismiss-keyguard")
-        baseline=probe("BEFORE")
+        # Android reports boot_complete before DNS/routing are guaranteed ready.
+        # Retry baseline to distinguish transient emulator networking from VPN bugs.
+        adb("shell","svc","wifi","enable")
+        baseline={"result":"FAIL","reason":"network_not_ready"}
+        for attempt in range(1,11):
+            time.sleep(5)
+            baseline=probe("BEFORE_"+str(attempt))
+            log("Emulator unproxied HTTPS attempt "+str(attempt)+": "+baseline["result"]+
+                ((" ("+baseline.get("reason","")+")") if baseline["result"]=="FAIL" else ""))
+            if baseline["result"]=="PASS": break
         RESULT["baseline"]=baseline
-        log("Independent Android app baseline HTTPS="+baseline["result"])
         if baseline["result"]!="PASS":
-            raise RuntimeError("emulator_baseline_https_failed")
+            detail=adb("shell","dumpsys","connectivity",timeout=30).stdout
+            RESULT["emulator"]["connectivity_service_present"]=bool(detail)
+            RESULT["emulator"]["has_default_network"]=("DefaultNetwork" in detail)
+            raise RuntimeError("emulator_baseline_https_failed_after_10_retries")
 
         adb("shell","am","start","-n","dev.omega.vpn/.MainActivity")
         time.sleep(4)
