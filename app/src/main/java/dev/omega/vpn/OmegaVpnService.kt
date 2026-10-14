@@ -125,8 +125,10 @@ class OmegaVpnService : VpnService() {
             }
             if (stopping) return
             stage = "start_native_loop"
+            // AndroidLibXrayLite startLoop starts the core and normally returns:
+            // return is NOT evidence that the VPN loop has exited.
+            // Keep the service and the TUN open until explicit disconnect/revoke.
             native.startLoop(XrayConfigFactory.build(profile),fd.fd)
-            if (!stopping) error("Native Xray loop exited unexpectedly")
         } catch (error: Throwable) {
             if (!stopping) {
                 failed = true
