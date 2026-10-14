@@ -24,3 +24,9 @@ Omega's `VpnService.Builder.addDisallowedApplication(packageName)` excludes its 
 The app cannot enable user-owned Android VPN lockdown by a normal unprivileged Android API. No automatic lockdown is implemented on a user's device.
 
 **Remain open:** DNS packet captures, IPv6 scenario, switch between mobile and Wi-Fi, ARM64 physical phone and operator trust.
+
+## First attempt and CI infrastructure repair
+
+[Workflow #38625798012](https://github.com/xxiamadelxx-blip/omega-vpn/actions/runs/38625798012) **FAILED BEFORE STARTING EMULATOR**. Go/mobile build could not verify `github.com/libp2p/go-netroute@v0.2.1/go.mod` because `sum.golang.org` returned `stream error: ... HTTP/2 INTERNAL_ERROR`. This is a network/checksum-fetch failure, **not** evidence for or against lockdown safety.
+
+[Commit 939f617](https://github.com/xxiamadelxx-blip/omega-vpn/commit/939f617841511355633512ca559b8b21a2e160bf) adds bounded retries to Go install, gomobile init and AAR build without disabling `GOSUMDB` or replacing pinned dependencies. Static `bash -n` and Python `py_compile`: PASS. Retest [#38626946358](https://github.com/xxiamadelxx-blip/omega-vpn/actions/runs/38626946358) in progress at documentation time.
