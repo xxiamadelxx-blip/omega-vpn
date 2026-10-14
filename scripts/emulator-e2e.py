@@ -201,10 +201,28 @@ def main():
                 RESULT["disconnect_vpn_history_hint"]=vpn_is_active()
                 RESULT["disconnect_clean"]=(RESULT["disconnect_clicked"] and restored)
                 break
-            if not click("Отключить VPN",14):
-                adb("shell","am","force-stop","dev.omega.vpn")
-                adb("shell","am","start","-n","dev.omega.vpn/.MainActivity")
-            time.sleep(4)
+            # A failed node must be disconnected before "Next server" is visible.
+            # Never carry stale TUN state into the next attempt.
+            if not click("Отключить VPN",20):
+                raise RuntimeError("failed_node_disconnect_button_not_available")
+            restored=False
+            last_recovery={"result":"FAIL","reason":"not_attempted"}
+            for recovery_attempt in range(1,5):
+                time.sleep(4)
+                last_recovery=probe("RECOVER_"+str(attempt)+"_"+str(recovery_attempt),wait=25)
+                restored=(last_recovery["result"]=="PASS" and
+                          last_recovery.get("ip_fingerprint")==baseline.get("ip_fingerprint"))
+                log("Node "+str(attempt)+" disconnect recovery "+str(recovery_attempt)+
+                    ": HTTPS="+last_recovery["result"]+" original_IP="+str(restored))
+                if restored: break
+            RESULT.setdefault("failed_node_recovery",[]).append({
+                "node_index":attempt,
+                "direct_https":last_recovery["result"],
+                "baseline_ip_restored":bool(restored)
+            })
+            if not restored:
+                raise RuntimeError("failed_node_vpn_disconnect_failed")
+            time.sleep(2)
         report()
         if not RESULT["vpn_verified"]:
             raise RuntimeError("no_end_to_end_https_vpn_ip_change_after_4_nodes")
