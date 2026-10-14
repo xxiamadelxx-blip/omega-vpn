@@ -6,6 +6,7 @@ on:
     branches: [main]
     paths:
       - 'scripts/emulator-e2e.py'
+      - 'scripts/android-lockdown-e2e.py'
       - 'app/src/main/**'
       - 'app/build.gradle.kts'
       - 'scripts/build-xray-android.sh'
@@ -82,7 +83,9 @@ jobs:
           cores: 2
           ram-size: 3072M
           emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none -no-snapshot -dns-server ${{ env.OMEGA_EMULATOR_DNS }}
-          script: python3 scripts/emulator-e2e.py
+          script: |
+            python3 scripts/emulator-e2e.py
+            python3 scripts/android-lockdown-e2e.py
       - name: Upload anonymized emulator evidence and screenshots
         if: always()
         uses: actions/upload-artifact@v4
