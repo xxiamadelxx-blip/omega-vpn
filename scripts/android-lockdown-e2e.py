@@ -203,7 +203,13 @@ def main():
             RESULT["status"] = "INCONCLUSIVE_LOCKDOWN_NOT_APPLIED"
             raise RuntimeError("android_lockdown_not_demonstrated")
 
-        # VPN was disconnected after the preceding standard Android E2E.
+        # We left Android Settings via HOME. Explicitly return to Omega before
+        # looking for its Connect button; searching the launcher cannot work.
+        opened = shell("am", "start", "-n", "dev.omega.vpn/.MainActivity")
+        if opened.returncode:
+            raise RuntimeError("lockdown_vpn_activity_relaunch_failed")
+        time.sleep(3)
+        omega.screenshot("lockdown-before-reconnect")
         if not omega.click("Подключиться к выбранному узлу",timeout=25):
             raise RuntimeError("lockdown_vpn_ui_reconnect_button_missing")
         time.sleep(12)
@@ -233,9 +239,13 @@ def main():
         RESULT["baseline_ip_leaked"] = bool(
             dead["result"]=="PASS" and
             dead.get("ip_fingerprint")==baseline.get("ip_fingerprint"))
+        RESULT["crash_probe_started"] = bool(dead.get("probe_status_observed",False))
         if dead["result"]=="PASS":
             RESULT["status"]="CRITICAL_CRASH_DIRECT_OR_UNEXPECTED_EGRESS"
             raise RuntimeError("lockdown_failed_to_block_egress_after_crash")
+        if not RESULT["crash_probe_started"]:
+            RESULT["status"]="INCONCLUSIVE_CRASH_PROBE_NOT_OBSERVED"
+            raise RuntimeError("lockdown_crash_probe_not_observed")
         RESULT["status"]="PASS_LOCKDOWN_PROCESS_DEATH"
     except Exception as error:
         RESULT["error_class"] = str(error)  # no secrets in exception codes
