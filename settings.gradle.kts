@@ -15,4 +15,4 @@ dependencyResolutionManagement {
 }
 
 rootProject.name = "OmegaVPN"
-include(":app")
+include(":app", ":probe")
