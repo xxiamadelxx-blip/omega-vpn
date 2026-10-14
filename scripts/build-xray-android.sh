@@ -30,7 +30,7 @@ test "$actual" = "$CORE_COMMIT" || { echo "Core commit mismatch"; exit 3; }
 go install "golang.org/x/mobile/cmd/gomobile@$MOBILE_VERSION"
 go install "golang.org/x/mobile/cmd/gobind@$MOBILE_VERSION"
 gomobile init
-(cd "$BUILD_DIR" && gomobile bind -target=android/arm64 -androidapi 26 -trimpath \
+(cd "$BUILD_DIR" && gomobile bind -target="${OMEGA_ANDROID_TARGETS:-android/arm64}" -androidapi 26 -trimpath \
   -ldflags='-s -w -buildid= -checklinkname=0' \
   -o "$ROOT/app/libs/libv2ray.aar" .)
 unzip -l "$ROOT/app/libs/libv2ray.aar" | grep -q 'jni/arm64-v8a/libgojni.so'
