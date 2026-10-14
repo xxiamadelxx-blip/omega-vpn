@@ -52,7 +52,7 @@ def record():
 
 
 def _bounds(node):
-    corners = [int(x) for x in re.findall(r"\\d+", node.get("bounds", ""))]
+    corners = [int(x) for x in re.findall(r"\d+", node.get("bounds", ""))]
     if len(corners) != 4:
         return None
     return corners
@@ -145,7 +145,7 @@ def enable_lockdown_via_settings_ui():
     else:
         # Android stock VPN Settings row uses a gear on the right.
         size = shell("wm", "size").stdout
-        m = re.search(r"(\\d+)x(\\d+)", size)
+        m = re.search(r"(\d+)x(\d+)", size)
         if not m:
             raise RuntimeError("android_settings_screen_dimensions_missing")
         clicked = shell("input", "tap", str(int(m.group(1))-65),
@@ -253,7 +253,7 @@ def main():
                 entry = _find_label(nodes, "Ω VPN") or _find_label(nodes, "Omega VPN")
                 if entry:
                     y = _mid_y(entry)
-                    size = re.search(r"(\\d+)x(\\d+)", shell("wm", "size").stdout)
+                    size = re.search(r"(\d+)x(\d+)", shell("wm", "size").stdout)
                     if size:
                         shell("input", "tap", str(int(size.group(1))-65), str(y))
                         time.sleep(2)
