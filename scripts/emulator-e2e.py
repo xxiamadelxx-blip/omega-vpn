@@ -164,6 +164,20 @@ def main():
                     break
             time.sleep(9)
             screenshot("03-attempt-"+str(attempt))
+            # probe() clears logcat. Capture only pre-redacted stage/type
+            # messages from Omega's native failure handler first.
+            native_log=adb("logcat","-d","-s","OMEGA_TUN:E","*:S").stdout
+            native_failures=[
+                {"stage":stage,"exception_type":kind}
+                for stage,kind in re.findall(
+                    r"vpn_failure stage=([a-z_]+) exception_type=([A-Za-z0-9_]+)",
+                    native_log
+                )[-3:]
+            ]
+            ui_connected=any(
+                "Отключить VPN" in n.get("text","")+n.get("content-desc","")
+                for n in ui()
+            )
             result=probe("AFTER_"+str(attempt))
             active=result.get("vpn_default",False)
             changed=(result["result"]=="PASS" and
@@ -173,6 +187,8 @@ def main():
                     "dns":result.get("dns","NOT_PROVEN"),
                     "public_ip_changed":bool(changed),
                     "android_vpn_history_hint":vpn_is_active(),
+                    "ui_displays_connected":ui_connected,
+                    "native_failure_stages":native_failures,
                     "error":result.get("reason")}
             RESULT["attempts"].append(record)
             log("Node "+str(attempt)+": VPN="+str(active)+
