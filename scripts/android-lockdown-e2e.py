@@ -73,8 +73,20 @@ def main():
 
         # The shell can configure Android's secure settings on THIS ephemeral
         # emulator; this is neither a supported API for the app nor a phone fix.
-        settings_set(KEYS[0],PKG)
-        settings_set(KEYS[1],"1")
+        # Settings.Secure readback alone does not activate VPN lockdown.
+        # Ask ConnectivityService to apply it, then independently probe.
+        help_result = shell("cmd", "connectivity", "help")
+        RESULT["connectivity_shell_supports_always_on"] = (
+            "set-always-on-vpn" in (help_result.stdout + help_result.stderr)
+        )
+        if not RESULT["connectivity_shell_supports_always_on"]:
+            RESULT["status"] = "INCONCLUSIVE_NO_SUPPORTED_LOCKDOWN_CONTROL"
+            raise RuntimeError("android_connectivity_shell_always_on_unavailable")
+        applied = shell("cmd", "connectivity", "set-always-on-vpn",
+                        "--user", "0", "--package", PKG, "--lockdown", "true")
+        RESULT["connectivity_shell_command_accepted"] = applied.returncode == 0
+        if applied.returncode:
+            raise RuntimeError("android_connectivity_shell_always_on_rejected")
         time.sleep(5)
         RESULT["keys_readback_match"] = (settings_get(KEYS[0]) == PKG and
                                          settings_get(KEYS[1]) == "1")
@@ -133,6 +145,15 @@ def main():
     finally:
         # Always restore the emulator's old VPN settings, including on failure.
         failures = []
+        if RESULT.get("connectivity_shell_command_accepted",False):
+            try:
+                previous = originals.get(KEYS[0], "null")
+                shell("cmd", "connectivity", "set-always-on-vpn",
+                      "--user", "0", "--package", previous,
+                      "--lockdown",
+                      "true" if originals.get(KEYS[1])=="1" else "false")
+            except Exception:
+                failures.append("connectivity_service_restore")
         for key,value in originals.items():
             try:
                 settings_set(key,value)
