@@ -60,34 +60,10 @@ jobs:
       - name: Configure Android emulator DNS
         run: |
           set -euo pipefail
-          HOST_DNS="$(awk '/^nameserver / {print $2}' /etc/resolv.conf | grep -Ev '^127\.|^::1
-          test -c /dev/kvm
-          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
-          sudo udevadm control --reload-rules
-          sudo udevadm trigger --name-match=kvm
-      - name: Android 15 device-level TUN, HTTPS, DNS and egress IP test
-        uses: reactivecircus/android-emulator-runner@v2
-        with:
-          api-level: 35
-          arch: x86_64
-          target: google_apis
-          profile: pixel_6
-          cores: 2
-          ram-size: 3072M
-          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none -no-snapshot -dns-server ${{ env.OMEGA_EMULATOR_DNS }}
-          script: python3 scripts/emulator-e2e.py
-      - name: Upload anonymized emulator evidence and screenshots
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: omega-android-emulator-evidence
-          path: e2e-results/
-          retention-days: 7
-          if-no-files-found: warn
- | head -1 || true)"
+          HOST_DNS="$(awk '/^nameserver / {print $2}' /etc/resolv.conf | grep -Ev '^127\\.|^::1$' | head -1 || true)"
           if [ -z "$HOST_DNS" ]; then HOST_DNS="8.8.8.8,1.1.1.1"; fi
           echo "OMEGA_EMULATOR_DNS=$HOST_DNS" >> "$GITHUB_ENV"
-          echo "Host DNS is configured; Android will use the same upstream"
+          echo "Host DNS configured for Android emulator"
       - name: Enable KVM
         run: |
           test -c /dev/kvm
@@ -103,7 +79,7 @@ jobs:
           profile: pixel_6
           cores: 2
           ram-size: 3072M
-          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none -no-snapshot
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none -no-snapshot -dns-server ${{ env.OMEGA_EMULATOR_DNS }}
           script: python3 scripts/emulator-e2e.py
       - name: Upload anonymized emulator evidence and screenshots
         if: always()
