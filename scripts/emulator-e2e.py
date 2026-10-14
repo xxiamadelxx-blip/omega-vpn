@@ -175,9 +175,20 @@ def main():
                 " HTTPS="+str(record["https"])+" IP_changed="+str(changed))
             if active and changed and result.get("dns")=="PASS":
                 RESULT["vpn_verified"]=True
-                click("Отключить VPN",15)
+                RESULT["disconnect_clicked"]=click("Отключить VPN",15)
                 time.sleep(6)
-                RESULT["disconnect_clean"]=not vpn_is_active()
+                # Full dumpsys connectivity includes historical NetworkAgentInfo entries;
+                # a substring TRANSPORT_VPN is not proof of a LIVE VPN after teardown.
+                # Routing back to the original IP from the second Android UID is decisive.
+                after_disconnect=probe("DISCONNECT",wait=32)
+                RESULT["disconnect_https"]=after_disconnect["result"]
+                RESULT["disconnect_baseline_ip_restored"]=(
+                    after_disconnect["result"]=="PASS" and
+                    after_disconnect.get("ip_fingerprint")==baseline.get("ip_fingerprint"))
+                RESULT["disconnect_vpn_history_hint"]=vpn_is_active()
+                RESULT["disconnect_clean"]=(
+                    RESULT["disconnect_clicked"] and
+                    RESULT["disconnect_baseline_ip_restored"])
                 break
             if not click("Отключить VPN",14):
                 adb("shell","am","force-stop","dev.omega.vpn")
