@@ -25,6 +25,7 @@ public final class ProbeActivity extends Activity {
         new Thread(() -> {
             HttpsURLConnection conn = null;
             String result = "FAIL";
+            boolean vpnDefault = false;
             try {
                 if (nonce == null || !nonce.matches("[A-Za-z0-9_]{1,32}") ||
                     salt == null || salt.length() < 12) {
@@ -34,7 +35,7 @@ public final class ProbeActivity extends Activity {
                     getSystemService(CONNECTIVITY_SERVICE);
                 Network network = cm.getActiveNetwork();
                 NetworkCapabilities capabilities = cm.getNetworkCapabilities(network);
-                boolean vpnDefault = capabilities != null &&
+                vpnDefault = capabilities != null &&
                     capabilities.hasTransport(NetworkCapabilities.TRANSPORT_VPN);
                 conn = (HttpsURLConnection) new URL("https://api.ipify.org").openConnection();
                 conn.setConnectTimeout(10000);
@@ -61,12 +62,13 @@ public final class ProbeActivity extends Activity {
                 InetAddress[] dns = InetAddress.getAllByName("www.cloudflare.com");
                 if (dns.length == 0) throw new IllegalStateException("DNS_UNRESOLVED");
                 result = "PASS http=200 family=" + family +
-                         " iphash=" + hash + " dns=PASS vpn=" + (vpnDefault ? "1" : "0");
+                         " iphash=" + hash + " dns=PASS";
             } catch (Throwable error) {
                 result = "FAIL reason=" + error.getClass().getSimpleName();
             } finally {
                 if (conn != null) conn.disconnect();
-                Log.i("OMEGA_PROBE", "nonce=" + (nonce == null ? "NONE" : nonce) + " " + result);
+                Log.i("OMEGA_PROBE", "nonce=" + (nonce == null ? "NONE" : nonce) + " " + result +
+                    " vpn=" + (vpnDefault ? "1" : "0"));
                 runOnUiThread(this::finish);
             }
         }, "omega-e2e-network-probe").start();

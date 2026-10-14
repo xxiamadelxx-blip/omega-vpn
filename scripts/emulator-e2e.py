@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Android 15 emulator, system VpnService, HTTPS in independent app UID."""
+import ipaddress
 import json
 import re
 import secrets
@@ -60,6 +61,95 @@ def tap_checkbox():
         swipe()
     return False
 
+def selected_public_endpoint():
+    """
+    Read only the PUBLIC IPv4 shown in Omega's UI. Never export/log a VLESS URI.
+    The source policy deliberately rejects domains and private destinations.
+    """
+    pattern = re.compile(r"выбран\s*№\s*\d+\s*:\s*((?:\d{1,3}\.){3}\d{1,3})")
+    for _ in range(3):
+        for node in ui():
+            t = node.get("text", "") + " " + node.get("content-desc", "")
+            match = pattern.search(t)
+            if match:
+                host = match.group(1)
+                if ipaddress.ip_address(host).is_global:
+                    return host
+                raise RuntimeError("feed_selected_endpoint_is_non_global")
+        adb("shell", "input", "swipe", "500", "370", "500", "1490", "350")
+        time.sleep(1)
+    raise RuntimeError("selected_public_endpoint_not_visible_in_android_ui")
+
+
+def fault_injection_selected_vless_endpoint(host, baseline_ip_hash):
+    """
+    Force the *VPN server transport* offline in the rooted test emulator,
+    then probe HTTPS from a separate non-excluded app UID.
+    Never treat successful direct HTTPS as success under an active VPN.
+    All changes are undone even if assertions fail. No node IP in evidence.
+    """
+    RESULT["upstream_failure"] = {"test": "block_selected_proxy_ipv4_egress"}
+    rooted = adb("root", timeout=20)
+    if rooted.returncode:
+        raise RuntimeError("fault_injection_requires_rooted_android_emulator")
+    adb("wait-for-device", timeout=30)
+    user = adb("shell", "id", "-u")
+    if user.returncode or user.stdout.strip() != "0":
+        raise RuntimeError("fault_injection_root_not_available")
+    # Only manipulate the emulator OUTPUT rule, never touch CI runner firewall.
+    ipt = ["shell", "iptables"]
+    inserted = False
+    try:
+        x = adb(*ipt, "-I", "OUTPUT", "1", "-d", host, "-j", "DROP")
+        if x.returncode:
+            raise RuntimeError("fault_injection_iptables_insertion_failed")
+        inserted = True
+        verify = adb(*ipt, "-C", "OUTPUT", "-d", host, "-j", "DROP")
+        if verify.returncode:
+            raise RuntimeError("fault_injection_iptables_rule_not_applied")
+        time.sleep(3)
+        blocked = probe("UPSTREAM_BLOCK", wait=30)
+        # A reachable web page via the original direct IP is a REAL traffic leak.
+        leaked = (blocked.get("result") == "PASS" and
+                  blocked.get("ip_fingerprint") == baseline_ip_hash)
+        still_vpn = blocked.get("vpn_default", False)
+        protected = blocked.get("result") == "FAIL" and still_vpn
+        RESULT["upstream_failure"].update({
+            "independent_uid_probe": blocked.get("result"),
+            "vpn_default_during_failure": bool(still_vpn),
+            "baseline_ip_leaked": bool(leaked),
+            "blocked_no_direct_fallback": bool(protected),
+            "error_class": blocked.get("reason") if blocked["result"] == "FAIL" else None
+        })
+        log("Upstream block: HTTPS=" + blocked["result"] +
+            " vpn_default=" + str(still_vpn) +
+            " baseline_ip_leaked=" + str(leaked))
+        if leaked:
+            raise RuntimeError("CRITICAL_direct_egress_leak_during_proxy_outage")
+        if not protected:
+            raise RuntimeError("proxy_outage_fail_closed_not_demonstrated")
+    finally:
+        if inserted:
+            removed = adb(*ipt, "-D", "OUTPUT", "-d", host, "-j", "DROP")
+            if removed.returncode:
+                raise RuntimeError("fault_injection_iptables_cleanup_failed")
+    recovered = False
+    for check in range(1, 5):
+        time.sleep(3)
+        response = probe("UPSTREAM_RECOVER_" + str(check), wait=25)
+        recovered = (
+            response.get("result") == "PASS" and
+            response.get("vpn_default", False) and
+            response.get("ip_fingerprint") != baseline_ip_hash
+        )
+        log("Upstream restored retry " + str(check) + ": tunneled_HTTPS=" + str(recovered))
+        if recovered:
+            break
+    RESULT["upstream_failure"]["https_recovered_over_vpn"] = bool(recovered)
+    if not recovered:
+        raise RuntimeError("proxy_transport_did_not_recover_after_unblock")
+
+
 def screenshot(name):
     try:
         x=subprocess.run(["adb","exec-out","screencap","-p"],capture_output=True,timeout=25)
@@ -77,7 +167,7 @@ def probe(nonce, wait=30):
     deadline=time.monotonic()+wait
     while time.monotonic()<deadline:
         logcat=adb("logcat","-d","-s","OMEGA_PROBE:I","*:S").stdout
-        m=re.search(r"nonce="+re.escape(nonce)+r" (PASS http=200 family=[46] iphash=[a-f0-9]{64} dns=PASS vpn=[01]|FAIL reason=\w+)",logcat)
+        m=re.search(r"nonce="+re.escape(nonce)+r" (PASS http=200 family=[46] iphash=[a-f0-9]{64} dns=PASS vpn=[01]|FAIL reason=\w+ vpn=[01])",logcat)
         if m:
             line=m.group(1)
             if line.startswith("PASS"):
@@ -86,7 +176,8 @@ def probe(nonce, wait=30):
                         "ip_family":re.search(r"family=([46])",line).group(1),
                         "dns":"PASS",
                         "vpn_default":re.search(r"vpn=([01])",line).group(1)=="1"}
-            return {"result":"FAIL","reason":line.split("reason=")[1]}
+            return {"result":"FAIL","reason":re.search(r"reason=(\w+)",line).group(1),
+                    "vpn_default":re.search(r"vpn=([01])",line).group(1)=="1"}
         time.sleep(2)
     return {"result":"FAIL","reason":"timeout"}
 
@@ -148,6 +239,7 @@ def main():
             time.sleep(2)
         screenshot("02-catalogue")
         if not found: raise RuntimeError("public_catalogue_not_loaded")
+        selected_host = selected_public_endpoint()
         if not tap_checkbox(): raise RuntimeError("risk_checkbox_not_found")
         log("Risk acknowledgement selected explicitly in emulator UI")
         for attempt in range(1,5):
@@ -195,6 +287,13 @@ def main():
                 " HTTPS="+str(record["https"])+" IP_changed="+str(changed))
             if active and changed and result.get("dns")=="PASS":
                 RESULT["vpn_verified"]=True
+                # Each attempt may choose a different node. The initial UI host
+                # is retained only for attempt 1; later candidates must be read.
+                if attempt > 1:
+                    selected_host = selected_public_endpoint()
+                fault_injection_selected_vless_endpoint(
+                    selected_host, baseline["ip_fingerprint"]
+                )
                 RESULT["disconnect_clicked"]=click("Отключить VPN",15)
                 # A VPN fd may close asynchronously while Android's network agent
                 # recomputes the default route. Verify return to BASELINE from
