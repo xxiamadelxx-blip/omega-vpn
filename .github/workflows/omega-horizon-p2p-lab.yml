@@ -34,3 +34,13 @@ jobs:
           python3 -m compileall -q research/horizon
       - name: Controlled loopback TLS P2P and relay tests
         run: python3 -m unittest discover -s research/horizon/tests -v
+      - name: UDP probe integrity unit tests
+        run: python3 research/horizon/netns_lab.py --self-test
+      - name: Isolated NAT and UDP relay recovery on real Linux namespaces
+        run: |
+          set -euo pipefail
+          command -v ip
+          command -v iptables
+          # The full test creates/deletes only ephemeral ip netns and veth pairs.
+          # Do NOT skip when privileged network isolation is unavailable.
+          sudo -E "$(command -v python3)" research/horizon/netns_lab.py --orchestrate
