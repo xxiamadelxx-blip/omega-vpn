@@ -36,6 +36,14 @@ jobs:
         run: python3 -m unittest discover -s research/horizon/tests -v
       - name: UDP probe integrity unit tests
         run: python3 research/horizon/netns_lab.py --self-test
+      - name: Deterministic NAT fixture unit tests
+        run: python3 research/horizon/nat_matrix.py --self-test
+      - name: Two isolated NAT mapping fixtures and unsolicited inbound filtering
+        run: |
+          set -euo pipefail
+          command -v ip
+          command -v iptables
+          sudo -E "$(command -v python3)" research/horizon/nat_matrix.py --orchestrate
       - name: Isolated NAT and UDP relay recovery on real Linux namespaces
         run: |
           set -euo pipefail
