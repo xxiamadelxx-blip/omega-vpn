@@ -402,9 +402,10 @@ def orchestrate() -> None:
             if punched["result"] == "PASS" and punched["path"] == "punch_direct":
                 hole_punch_status = "PASS_CONTROLLED_NAT"
             elif punched["result"] == "NO_PATH" and punched["path"] == "punch_direct":
-                # Endpoint-dependent NAT mappings can invalidate the address
-                # learned from rendezvous. This is NOT an accepted direct path.
-                hole_punch_status = "UNSUPPORTED_NAT_MAPPING"
+                # Port rewriting, NAT filtering, or race conditions may
+                # invalidate a rendezvous hint. The laboratory did not
+                # establish a direct path; do not assert any single cause.
+                hole_punch_status = "DIRECT_PATH_NOT_CONFIRMED"
             else:
                 raise AssertionError("unexpected UDP punching outcome: " + str(punched))
             checks.append({"case": "simultaneous_udp_nat_hole_punch_trial",
@@ -413,7 +414,7 @@ def orchestrate() -> None:
             # peer relay, never switch to unprotected Internet egress.
             post_punch = client(topology, key)
             expect(post_punch, "PASS", "relay")
-            checks.append({"case": "unusable_hole_punch_relay_fallback", **post_punch})
+            checks.append({"case": "relay_available_after_hole_punch_trial", **post_punch})
 
             topology.open_mapping()
             two = client(topology, key)
