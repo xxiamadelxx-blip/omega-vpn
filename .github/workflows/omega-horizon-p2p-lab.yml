@@ -53,6 +53,17 @@ jobs:
           set -euo pipefail
           command -v openssl
           sudo -E "$(command -v python3)" research/horizon/tls_netns.py --orchestrate
+      - name: Setup Go 1.26 for isolated QUIC mutual-auth lab
+        uses: actions/setup-go@v6
+        with:
+          go-version: '1.26.0'
+          cache-dependency-path: research/horizon/goquic/go.sum
+      - name: Verify QUIC library modules and mutual TLS client and server
+        run: |
+          set -euo pipefail
+          cd research/horizon/goquic
+          go mod verify
+          go test -count=1 -v ./...
       - name: Standard QUIC TLS 1.3 peer pin, NAT relay and restart test
         run: |
           set -euo pipefail
