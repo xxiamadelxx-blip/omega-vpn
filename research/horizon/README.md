@@ -39,3 +39,19 @@ Requires Linux, root **inside an isolated CI runner**, `iproute2` and `iptables`
 Repeatability: six fresh six-namespace Vercel runs of commit `5d1f577` resulted in **0/6 confirmed direct UDP hole-punch sessions**, while registered relay fallback remained available in **6/6**. An earlier single fresh-lab run confirmed one direct UDP punched path, demonstrating possible but not repeatably available connectivity. In a packet capture of one failed run, peer mapped port 39001 (to rendezvous) was rewritten to 44723 (to client); this is a specific measured failure, not proof of identical behavior across all NAT devices. End-to-end successful relay fallback including the direct timeout averaged around **951.5 ms**, not the misleading sub-millisecond RTT of the final hop. These samples do NOT estimate worldwide NAT traversal probability.
 
 Research gate: **G2 PARTIAL (network isolation and relay fail-closed behavior proven; NAT hole punching NOT a reliable feature).** No Android/TUN, packet-level leak guarantees, consumer-facing `kill switch` or deployed exit is claimed.
+
+## TLS 1.3 on separate Linux NAT hosts
+
+The third laboratory, `tls_netns.py`, uses **real TCP sockets and mutual TLS 1.3** inside the same six isolated Linux namespaces. A peer can accept direct TCP behind a specifically configured NAT port mapping, or **initiate its own TCP connection outward** to a relay, then establish TLS in server mode over that already connected backhaul. The relay forwards opaque TLS records without the ephemeral test CA, server or client keys. No Internet egress, user TUN packets, public peer discovery, or Android integration is permitted.
+
+    sudo -E python3 research/horizon/tls_netns.py --orchestrate
+
+[GitHub Actions #38724414828](https://github.com/xxiamadelxx-blip/omega-vpn/actions/runs/38724414828) **SUCCESS, 4/4**:
+- Direct mTLS over deliberately opened NAT TCP port: TLSv1.3 and expected peer identity.
+- No public inbound port: encrypted session over outward-initiated peer TCP backhaul and blind relay, 4,218 bytes forwarded, no plaintext synthetic marker observed.
+- Wrong server identity signed by same disposable test CA: rejected, **no plaintext fallback**.
+- Tampered TLS handshake bytes at intermediary: rejected, **no plaintext fallback**.
+
+The initial CI failed because the synthetic relay did not handle a TCP `ConnectionResetError` after the client correctly rejected a wrong certificate. [Commit 5d2d438](https://github.com/xxiamadelxx-blip/omega-vpn/commit/5d2d4388a66cb86ecec04f9f2fe2278a2e8f31e8) handles peer reset as expected closure **without weakening TLS verification**. Full independent CI then passed.
+
+The TLS integration is **TCP-only**. UDP NAT mapping tests remain synthetic HMAC-only packets and do **not** provide encryption or a finished VPN. The trusted ephemeral CA is centralized and not suitable as an open network identity solution. Neither experiment proves RKN DPI invisibility, anonymity, Android fail-closed behavior, or CGNAT connectivity.
