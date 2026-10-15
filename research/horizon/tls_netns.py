@@ -130,7 +130,17 @@ def relay_worker(tamper: bool) -> int:
                     if not ready:
                         break
                     for source in ready:
-                        packet = source.recv(65536)
+                        try:
+                            packet = source.recv(65536)
+                        except (ConnectionResetError, BrokenPipeError):
+                            # A rejected peer certificate legitimately resets TLS.
+                            # The forwarding node must still produce evidence.
+                            print(json.dumps({
+                                "status": "RELAY_REMOTE_RESET",
+                                "bytes": count,
+                                "tls_record_sample_contains_marker": MARKER in transcript
+                            }), flush=True)
+                            return 0
                         if not packet:
                             print(json.dumps({"status": "RELAY_CLOSED",
                                               "bytes": count,
@@ -144,7 +154,15 @@ def relay_worker(tamper: bool) -> int:
                         count += len(packet)
                         if len(transcript) < 32768:
                             transcript.extend(packet[:32768 - len(transcript)])
-                        destination.sendall(packet)
+                        try:
+                            destination.sendall(packet)
+                        except (ConnectionResetError, BrokenPipeError):
+                            print(json.dumps({
+                                "status": "RELAY_PEER_CLOSED",
+                                "bytes": count,
+                                "tls_record_sample_contains_marker": MARKER in transcript
+                            }), flush=True)
+                            return 0
     print(json.dumps({"status": "RELAY_FINISHED", "bytes": count,
                       "tls_record_sample_contains_marker": MARKER in transcript}),
           flush=True)
