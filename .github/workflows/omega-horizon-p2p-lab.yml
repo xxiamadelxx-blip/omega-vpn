@@ -27,8 +27,10 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: '3.13'
-      - name: Install pinned research-only AEAD dependency
-        run: python3 -m pip install --disable-pip-version-check 'cryptography==46.0.4'
+      - name: Install pinned research-only cryptography and QUIC dependencies
+        run: |
+          python3 -m pip install --disable-pip-version-check 'cryptography==46.0.4' 'aioquic==1.6.1'
+          python3 -m pip check
       - name: Check test environment
         run: |
           python3 --version
@@ -51,6 +53,10 @@ jobs:
           set -euo pipefail
           command -v openssl
           sudo -E "$(command -v python3)" research/horizon/tls_netns.py --orchestrate
+      - name: Standard QUIC TLS 1.3 peer pin, NAT relay and restart test
+        run: |
+          set -euo pipefail
+          sudo -E "$(command -v python3)" research/horizon/quic_netns.py --orchestrate
       - name: Authenticated encrypted UDP route migration on isolated NAT
         run: |
           set -euo pipefail
