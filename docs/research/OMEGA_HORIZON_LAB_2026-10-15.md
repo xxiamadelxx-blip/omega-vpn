@@ -28,7 +28,7 @@ Python >= 3.11, OpenSSL CLI. Эфемерные тестовые сертифи�
 
     python3 -m unittest discover -s research/horizon/tests -v
 
-**Фактический локальный результат:** 9/9 PASS; три последовательных прогона PASS на Python 3.13.5, OpenSSL 3.5.5. GitHub CI: запуск и отдельная оценка после добавления workflow, PASS не предполагать заранее.
+**Фактический локальный результат:** 9/9 PASS; три последовательных прогона PASS на Python 3.13.5, OpenSSL 3.5.5. **GitHub Actions [#38717504898](https://github.com/xxiamadelxx-blip/omega-vpn/actions/runs/38717504898): SUCCESS**, шаг `Controlled loopback TLS P2P and relay tests` = PASS; независимая Vercel Sandbox проверка точного коммита: **9/9 PASS**. Это отдельный лабораторный CI, а не Android E2E.
 
 ## Threat model и пределы результата
 
