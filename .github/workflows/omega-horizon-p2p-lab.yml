@@ -1,0 +1,82 @@
+name: Omega Horizon P2P research lab
+
+on:
+  push:
+    branches:
+      - research/omega-horizon-p2p-lab
+    paths:
+      - 'research/horizon/**'
+      - '.github/workflows/omega-horizon-p2p-lab.yml'
+  pull_request:
+    paths:
+      - 'research/horizon/**'
+      - '.github/workflows/omega-horizon-p2p-lab.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  horizon-lab:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Checkout research branch
+        uses: actions/checkout@v4
+      - name: Python 3.13
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - name: Install pinned research-only cryptography and QUIC dependencies
+        run: |
+          python3 -m pip install --disable-pip-version-check 'cryptography==46.0.4' 'aioquic==1.6.1'
+          python3 -m pip check
+      - name: Check test environment
+        run: |
+          python3 --version
+          openssl version
+          python3 -m compileall -q research/horizon
+      - name: Controlled loopback TLS P2P and relay tests
+        run: python3 -m unittest discover -s research/horizon/tests -v
+      - name: UDP probe integrity unit tests
+        run: python3 research/horizon/netns_lab.py --self-test
+      - name: Deterministic NAT fixture unit tests
+        run: python3 research/horizon/nat_matrix.py --self-test
+      - name: Two isolated NAT mapping fixtures and unsolicited inbound filtering
+        run: |
+          set -euo pipefail
+          command -v ip
+          command -v iptables
+          sudo -E "$(command -v python3)" research/horizon/nat_matrix.py --orchestrate
+      - name: TLS 1.3 peer authentication over isolated TCP NAT and blind relay
+        run: |
+          set -euo pipefail
+          command -v openssl
+          sudo -E "$(command -v python3)" research/horizon/tls_netns.py --orchestrate
+      - name: Setup Go 1.26 for isolated QUIC mutual-auth lab
+        uses: actions/setup-go@v6
+        with:
+          go-version: '1.26.0'
+          cache-dependency-path: research/horizon/goquic/go.sum
+      - name: Verify QUIC library modules and mutual TLS client and server
+        run: |
+          set -euo pipefail
+          cd research/horizon/goquic
+          go mod verify
+          go test -count=1 -v ./...
+      - name: Standard QUIC TLS 1.3 peer pin, NAT relay and restart test
+        run: |
+          set -euo pipefail
+          sudo -E "$(command -v python3)" research/horizon/quic_netns.py --orchestrate
+      - name: Authenticated encrypted UDP route migration on isolated NAT
+        run: |
+          set -euo pipefail
+          sudo -E "$(command -v python3)" research/horizon/secure_udp_netns.py --orchestrate
+      - name: Isolated NAT and UDP relay recovery on real Linux namespaces
+        run: |
+          set -euo pipefail
+          command -v ip
+          command -v iptables
+          # The full test creates/deletes only ephemeral ip netns and veth pairs.
+          # Do NOT skip when privileged network isolation is unavailable.
+          sudo -E "$(command -v python3)" research/horizon/netns_lab.py --orchestrate
