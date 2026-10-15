@@ -258,7 +258,7 @@ def test_case(label: str, root: Path) -> dict:
                     raise AssertionError("unexpected peer/relay worker failure: " + err[-400:])
                 if p is workers[0] and label != "direct":
                     if not out.strip():
-                        raise AssertionError("blind relay produced no output")
+                        raise AssertionError("missing relay result in " + label + ": " + err[-400:])
                     relay_details = json.loads(out.strip().splitlines()[-1])
                     if relay_details["bytes"] == 0 or \
                        relay_details["tls_record_sample_contains_marker"]:
