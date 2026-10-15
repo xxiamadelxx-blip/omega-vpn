@@ -89,3 +89,10 @@
 ## 7. Протокол следующей сессии
 
 Прочитать `README.md`, `AGENT.md`, `MILESTONES.md` и этот файл. Проверить, что реально существует в репозитории, не ожидать уже созданный Android-проект. Выполнить ближайший gate M1: выбрать техническую базу по проверяемому Android build-spike и лицензии, а не по рекламному описанию. Обновить документы после проверки и записать результат коммитом.
+
+
+## R&D обновление 15.10.2026: взаимный QUIC/TLS
+
+Исследовательская ветка research/omega-horizon-p2p-lab, [draft PR #1](https://github.com/xxiamadelxx-blip/omega-vpn/pull/1). После начального TLS-loopback и HMAC UDP эксперимента: [CI #38734829926](https://github.com/xxiamadelxx-blip/omega-vpn/actions/runs/38734829926) подтвердил QUIC/TLS1.3 **8/8 сетевых сценариев** через direct/NAT/слепой relay, но там ещё нет проверки личности клиента сервером. [CI #38736222477](https://github.com/xxiamadelxx-blip/omega-vpn/actions/runs/38736222477) подтвердил **7/7 Go-тестов** взаимной TLS 1.3 аутентификации клиентов и серверов (quic-go v0.63.0, Go1.26) с SPKI pin и сертификатами от временного CA. Последний тест **только localhost**, пока не соединён с NAT/relay. [Исходники](research/horizon/goquic/) и [протокол](docs/evidence/OMEGA_HORIZON_GO_MTLS_G2_2026-10-15.md).
+
+**Продуктовый статус не меняется:** G2=PARTIAL, M2/M5 physical Android OPEN, никакой обещанной полной анонимности, отсутствует подтверждённый добровольный Internet egress, peer trust onboarding и реальное CGNAT. Android на main остаётся Xray/VpnService, ни одной продакшен-замены.
