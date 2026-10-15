@@ -38,29 +38,31 @@ def key_from_environment() -> bytes:
 
 def peer_worker() -> None:
     state = RecordSession("peer", key_from_environment())
-    with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sock:
-        sock.bind((PEER_LAN, PEER_PORT))
-        sock.settimeout(0.1)
+    # Separate the direct listening socket from the outbound relay socket.
+    # Sharing one UDP source port created conflicting NAT/conntrack mappings:
+    # an existing peer->relay flow shadowed a later direct DNAT rule.
+    with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as direct, \
+         socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as via_relay:
+        direct.bind((PEER_LAN, PEER_PORT))
+        via_relay.bind((PEER_LAN, 0))
         next_registration = 0.0
         while True:
             now = time.monotonic()
             if now >= next_registration:
-                sock.sendto(REGISTER, (RELAY_LAN, RELAY_PORT))
+                via_relay.sendto(REGISTER, (RELAY_LAN, RELAY_PORT))
                 next_registration = now + 0.25
-            try:
-                wire, address = sock.recvfrom(1024)
-            except socket.timeout:
-                continue
-            if not wire.startswith(MAGIC):
-                continue
-            try:
-                payload = state.open(wire)
-            except RecordRejected:
-                # Reject tampering and replay: never acknowledge invalid frames.
-                continue
-            if not payload.startswith(LAB_PROBE_PREFIX):
-                continue
-            sock.sendto(state.seal(b"ACK:" + payload), address)
+            ready, _, _ = select.select([direct, via_relay], [], [], 0.10)
+            for connection in ready:
+                wire, address = connection.recvfrom(1024)
+                if not wire.startswith(MAGIC):
+                    continue
+                try:
+                    payload = state.open(wire)
+                except RecordRejected:
+                    # Malformed, unauthenticated or replayed records get NO ACK.
+                    continue
+                if payload.startswith(LAB_PROBE_PREFIX):
+                    connection.sendto(state.seal(b"ACK:" + payload), address)
 
 
 def relay_worker(corrupt_reply: bool) -> None:
@@ -115,9 +117,12 @@ def client_worker() -> None:
     state = RecordSession("client", key_from_environment())
     previous_wire: bytes | None = None
     previous_target: tuple[str, int] | None = None
-    with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sock:
-        sock.bind((CLIENT_LAN, 0))
-        for line in sys.stdin:
+    for line in sys.stdin:
+        # Keep one AEAD identity but rotate the local UDP socket on each path
+        # attempt. An old conntrack entry can otherwise hide a new NAT DNAT
+        # mapping for a previously failed direct destination tuple.
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sock:
+            sock.bind((CLIENT_LAN, 0))
             command = line.strip()
             if command == "stop":
                 break
