@@ -361,10 +361,12 @@ def scenario(folder: Path, label: str) -> dict:
                        "clone" if label == "clone-pin" else "valid")
             if mode == "direct":
                 configure_direct(topology)
-            else:
+            elif label != "no-relay-path":
                 relay = launch(topology, "relay", folder, corrupt=label=="tamper")
                 workers.append(relay)
                 time.sleep(0.15)
+            # In no-relay-path the peer tries to register, but no intermediary
+            # is listening and direct ingress remains closed by both NATs.
             peer = launch(topology, "peer", folder, mode=mode,
                           cert_variant=variant)
             workers.append(peer)
@@ -380,6 +382,10 @@ def scenario(folder: Path, label: str) -> dict:
             elif label == "clone-pin":
                 if first["status"] != "PIN_REJECTED" or first["application_datagram_sent"]:
                     raise AssertionError("impostor with same DNS name bypassed leaf pin")
+            elif label == "no-relay-path":
+                if (first["status"] != "HANDSHAKE_OR_PATH_FAILED" or
+                    first["application_datagram_sent"]):
+                    raise AssertionError("unavailable relay allowed an unprotected probe")
             else:
                 if first["status"] != "HANDSHAKE_OR_PATH_FAILED":
                     raise AssertionError(f"{label} unexpectedly completed QUIC: {first}")
@@ -409,7 +415,7 @@ def scenario(folder: Path, label: str) -> dict:
                 extra["fresh_after_restart"] = fresh
 
             relay_report = None
-            if mode == "relay":
+            if mode == "relay" and label != "no-relay-path":
                 relay_report = stop_worker(workers[0])
                 if relay_report is None:
                     raise AssertionError("blind relay did not report observed traffic")
@@ -438,7 +444,7 @@ def orchestrate() -> None:
         issue_certificates(folder)
         issue_clone_certificate(folder)
         labels = ("direct", "relay", "wrong-name", "clone-pin",
-                  "tamper", "reconnect", "restart-replay")
+                  "tamper", "reconnect", "restart-replay", "no-relay-path")
         output = [scenario(folder, item) for item in labels]
     print(json.dumps({
         "suite": "omega_horizon_standard_quic_tls13",
