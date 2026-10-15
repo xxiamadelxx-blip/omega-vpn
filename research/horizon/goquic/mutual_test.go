@@ -241,3 +241,66 @@ func TestNoListenerNeverUsesUnprotectedFallback(t *testing.T) {
         t.Fatal("missing QUIC peer unexpectedly accepted application datagram")
     }
 }
+
+
+// Negative tests for identity and protocol downgrade. These deliberately
+// construct valid-looking certificates / endpoints but never send user data.
+func TestWrongClientCARejectedBeforeApplication(t *testing.T) {
+    ca, caKey, pool := newLabCA(t)
+    server := makeLeaf(t, ca, caKey, "omega-peer", x509.ExtKeyUsageServerAuth)
+    trustedClient := makeLeaf(t, ca, caKey, "omega-client", x509.ExtKeyUsageClientAuth)
+    attackerCA, attackerKey, _ := newLabCA(t)
+    attacker := makeLeaf(t, attackerCA, attackerKey, "omega-client", x509.ExtKeyUsageClientAuth)
+    addr, counter := launch(t, serverConfig(server, pool, pin(trustedClient)))
+    if err := exchange(addr, clientConfig(attacker, pool, pin(server)), 1700*time.Millisecond); err == nil {
+        t.Fatal("untrusted client CA unexpectedly accepted")
+    }
+    if counter.Load() != 0 {
+        t.Fatalf("client with untrusted CA reached application: %d", counter.Load())
+    }
+}
+
+func TestWrongALPNRejectedBeforeApplication(t *testing.T) {
+    ca, caKey, pool := newLabCA(t)
+    server := makeLeaf(t, ca, caKey, "omega-peer", x509.ExtKeyUsageServerAuth)
+    client := makeLeaf(t, ca, caKey, "omega-client", x509.ExtKeyUsageClientAuth)
+    addr, counter := launch(t, serverConfig(server, pool, pin(client)))
+    cfg := clientConfig(client, pool, pin(server))
+    cfg.NextProtos = []string{"unrelated-protocol-v1"}
+    if err := exchange(addr, cfg, 1700*time.Millisecond); err == nil {
+        t.Fatal("QUIC ALPN mismatch unexpectedly negotiated")
+    }
+    if counter.Load() != 0 {
+        t.Fatalf("ALPN downgrade reached application: %d", counter.Load())
+    }
+}
+
+func TestExpiredClientCertificateRejectedBeforeApplication(t *testing.T) {
+    ca, caKey, pool := newLabCA(t)
+    server := makeLeaf(t, ca, caKey, "omega-peer", x509.ExtKeyUsageServerAuth)
+    validClient := makeLeaf(t, ca, caKey, "omega-client", x509.ExtKeyUsageClientAuth)
+    public, private, err := ed25519.GenerateKey(rand.Reader)
+    if err != nil { t.Fatal(err) }
+    template := &x509.Certificate{
+        SerialNumber: big.NewInt(91),
+        Subject: pkix.Name{CommonName: "omega-client"},
+        DNSNames: []string{"omega-client"},
+        NotBefore: time.Now().Add(-48*time.Hour),
+        NotAfter: time.Now().Add(-24*time.Hour),
+        KeyUsage: x509.KeyUsageDigitalSignature,
+        ExtKeyUsage: []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth},
+        BasicConstraintsValid: true,
+    }
+    der, err := x509.CreateCertificate(rand.Reader, template, ca, public, caKey)
+    if err != nil { t.Fatal(err) }
+    expired := tls.Certificate{Certificate: [][]byte{der}, PrivateKey: private}
+    addr, counter := launch(t, serverConfig(server, pool, pin(validClient)))
+    cfg := clientConfig(validClient, pool, pin(server))
+    cfg.Certificates = []tls.Certificate{expired}
+    if err := exchange(addr, cfg, 1700*time.Millisecond); err == nil {
+        t.Fatal("expired client certificate unexpectedly accepted")
+    }
+    if counter.Load() != 0 {
+        t.Fatalf("expired client certificate reached application: %d", counter.Load())
+    }
+}
