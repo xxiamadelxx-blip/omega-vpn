@@ -1,6 +1,6 @@
 # Ω Horizon G2: authenticated encryption over NAT and blind relay
 
-**Date:** 2026-10-15. **Branch:** \`research/omega-horizon-p2p-lab\`. **Scope:** isolated private Linux network laboratory, not a production VPN or an anonymity guarantee.
+**Date:** 2026-10-15. **Branch:** `research/omega-horizon-p2p-lab`. **Scope:** isolated private Linux network laboratory, not a production VPN or an anonymity guarantee.
 
 ## Verifiable evidence
 
@@ -8,18 +8,18 @@
 - Existing loopback mTLS and newly added AEAD unit suite: **25/25 PASS** (9 TLS + 16 AEAD).
 - Linux NAT fixture unit, private-namespace mapping/filtering tests, TCP mTLS-over-NAT, original UDP relay test, and new encrypted-UDP relay/netns E2E: **PASS** in the same independent run.
 - Code: [record layer](../../research/horizon/secure_datagram.py), [record tests](../../research/horizon/tests/test_secure_datagram.py), [isolated NAT/relay test](../../research/horizon/secure_udp_netns.py), [CI workflow](../../.github/workflows/omega-horizon-p2p-lab.yml).
-- Reproduction on authorized isolated Linux host with Python 3.13, iproute2, iptables and \`cryptography==46.0.4\`:
-  \`\`\`bash
+- Reproduction on authorized isolated Linux host with Python 3.13, iproute2, iptables and `cryptography==46.0.4`:
+  ```bash
   python3 -m pip install 'cryptography==46.0.4'
   python3 -m unittest discover -s research/horizon/tests -v
   sudo -E python3 research/horizon/secure_udp_netns.py --orchestrate
-  \`\`\`
+  ```
 
 ## What the prototype demonstrates
 
 The peers share a newly generated **32-byte test secret** out-of-band; **only client/peer receive it**. A fresh random 128-bit session ID and directional HKDF-SHA256 derivation produce distinct ChaCha20-Poly1305 keys for client→peer and peer→client. The full versioned record header is authenticated as AEAD associated data. A monotonic per-sender sequence and 128-record receive window reject exact duplicates, old records and corrupted ciphertext.
 
-Network endpoints in the six namespaces are restricted to the isolated \`10.53.0.0/16\` laboratory. The relay has no test PSK, cannot decrypt or generate valid peer records, and forwarded 296 bytes of ciphertext during the checked normal route. No synthetic plaintext marker appeared in relay-observed datagrams. The network program deliberately uses **two distinct peer UDP sockets** (direct vs relay registration), and rebinds client transport sockets after each route change while retaining the *same record-layer session identity*. This avoids stale Linux conntrack entries from a previous failed direct candidate.
+Network endpoints in the six namespaces are restricted to the isolated `10.53.0.0/16` laboratory. The relay has no test PSK, cannot decrypt or generate valid peer records, and forwarded 296 bytes of ciphertext during the checked normal route. No synthetic plaintext marker appeared in relay-observed datagrams. The network program deliberately uses **two distinct peer UDP sockets** (direct vs relay registration), and rebinds client transport sockets after each route change while retaining the *same record-layer session identity*. This avoids stale Linux conntrack entries from a previous failed direct candidate.
 
 **Eight independent checked states in one crypto session:**
 
@@ -46,7 +46,7 @@ Lab metrics in the independent CI run: direct exchange **~0.26 ms**, encrypted r
 4. There is **no Android VpnService**, actual IP/TUN, application traffic, DNS/IPv6 packet-level capture, Wi-Fi/mobile switching, Internet exit, or measured censorship resistance. No protection against RKN DPI has been measured here.
 5. Only synthetic test probes are permitted. The relay, the discovery system and volunteers are not assumed trustworthy. No public volunteer egress was enabled; no user keys, subscriptions or private destinations were used.
 
-**G2 result: PARTIAL**, security lab invariants PASS; all actual product/physical-device release gates remain OPEN. The working Android Xray implementation in \`main\` was not changed.
+**G2 result: PARTIAL**, security lab invariants PASS; all actual product/physical-device release gates remain OPEN. The working Android Xray implementation in `main` was not changed.
 
 ## Next falsifiable gate
 
