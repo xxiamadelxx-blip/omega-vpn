@@ -55,3 +55,19 @@ The third laboratory, `tls_netns.py`, uses **real TCP sockets and mutual TLS 1.3
 The initial CI failed because the synthetic relay did not handle a TCP `ConnectionResetError` after the client correctly rejected a wrong certificate. [Commit 5d2d438](https://github.com/xxiamadelxx-blip/omega-vpn/commit/5d2d4388a66cb86ecec04f9f2fe2278a2e8f31e8) handles peer reset as expected closure **without weakening TLS verification**. Full independent CI then passed.
 
 The TLS integration is **TCP-only**. UDP NAT mapping tests remain synthetic HMAC-only packets and do **not** provide encryption or a finished VPN. The trusted ephemeral CA is centralized and not suitable as an open network identity solution. Neither experiment proves RKN DPI invisibility, anonymity, Android fail-closed behavior, or CGNAT connectivity.
+
+
+## Standard QUIC/TLS 1.3 and Go mutual authentication
+
+**Independent [GitHub Actions #38734829926](https://github.com/xxiamadelxx-blip/omega-vpn/actions/runs/38734829926) SUCCESS:** Python aioquic 1.6.1 achieved 8/8 cases with actual UDP QUIC DATAGRAM through isolated Linux NAT, direct and blind relay, certificate name/leaf pin checks, reconnect, synthetic replay rejection after process restart, and no-route fail-closed behavior. Source: quic_netns.py; full [lab evidence](../../docs/evidence/OMEGA_HORIZON_QUIC_TLS13_G2_2026-10-15.md). **Python variant only validates the server identity, not the client.** The leaf pin readback uses a private aioquic attribute and is *not suitable for production*.
+
+**Independent [GitHub Actions #38736222477](https://github.com/xxiamadelxx-blip/omega-vpn/actions/runs/38736222477) SUCCESS:** Go 1.26.0/quic-go v0.63.0 achieved 7/7 tests of genuine **mutual QUIC/TLS1.3 authentication**, requiring client and server certificates and public-key SPKI pins through supported Go crypto/tls APIs. Source: goquic/mutual_test.go, goquic/go.mod, goquic/go.sum; [Go evidence](../../docs/evidence/OMEGA_HORIZON_GO_MTLS_G2_2026-10-15.md).
+
+Go tests are localhost-only, while Python QUIC NAT/relay tests are server-auth-only. **These two capabilities have not yet been integrated into one implementation.** There is no automatic onboarding, public volunteer exit, user TUN, Android integration, real mobile CGNAT, or claim of anti-DPI invisibility. G2 remains PARTIAL and main Xray is untouched.
+
+Reproduce Go peer mutual-auth:
+~~~
+cd research/horizon/goquic
+go mod verify
+go test -count=1 -v ./...
+~~~
