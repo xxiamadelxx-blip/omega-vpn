@@ -83,6 +83,9 @@ def peer_worker() -> None:
 
 
 def relay_worker(corrupt: bool) -> None:
+    # The intermediary must never possess the probe's end-to-end MAC key.
+    if os.environ.get("OMEGA_HORIZON_LAB_KEY"):
+        raise RuntimeError("relay inadvertently received peer secret")
     with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sock:
         sock.bind((RELAY_LAN, RELAY_PORT))
         sock.settimeout(0.3)
@@ -116,6 +119,7 @@ def client_worker() -> int:
     nonce = secrets.token_bytes(NONCE_BYTES)
     question = frame(b"P", nonce, key)
     samples = []
+    session_started = time.monotonic()
     with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sock:
         sock.bind((CLIENT_LAN, 0))
         for path, destination in (("direct", (PEER_NAT, PEER_PORT)),
@@ -131,8 +135,8 @@ def client_worker() -> int:
             # A cross-path packet or a forged reply cannot count as a PASS.
             if actual[0] != destination[0]:
                 print(json.dumps({"result": "AUTH_FAIL",
-                                  "reason": "unexpected_endpoint",
-                                  "path": path}), flush=True)
+                                  "reason": "unexpected_endpoint", "path": path,
+                                  "total_elapsed_ms": round(1000 * (time.monotonic() - session_started), 2)}), flush=True)
                 return 13
             try:
                 reply_nonce = parse_frame(raw, b"A", key)
@@ -140,14 +144,16 @@ def client_worker() -> int:
                     raise ValueError("synthetic nonce mismatch")
             except ValueError:
                 print(json.dumps({"result": "AUTH_FAIL",
-                                  "reason": "authenticated_frame_rejected",
-                                  "path": path}), flush=True)
+                                  "reason": "authenticated_frame_rejected", "path": path,
+                                  "total_elapsed_ms": round(1000 * (time.monotonic() - session_started), 2)}), flush=True)
                 return 13
             print(json.dumps({"result": "PASS", "path": path,
-                              "latency_ms": round(1000 * (time.monotonic() - start), 2),
+                              "path_rtt_ms": round(1000 * (time.monotonic() - start), 2),
+                              "total_elapsed_ms": round(1000 * (time.monotonic() - session_started), 2),
                               "failed_paths": samples}), flush=True)
             return 0
     print(json.dumps({"result": "NO_PATH", "path": None,
+                      "total_elapsed_ms": round(1000 * (time.monotonic() - session_started), 2),
                       "failed_paths": samples}), flush=True)
     return 11
 
@@ -254,7 +260,10 @@ class Topology:
 
 def worker(topology: Topology, role: str, key: str, corrupt: bool = False):
     env = dict(os.environ)
-    env["OMEGA_HORIZON_LAB_KEY"] = key
+    if role in ("peer", "client"):
+        env["OMEGA_HORIZON_LAB_KEY"] = key
+    else:
+        env.pop("OMEGA_HORIZON_LAB_KEY", None)
     command = namespace_command(
         topology.names[role], sys.executable, os.path.abspath(__file__),
         "--worker", role, *(["--corrupt"] if corrupt else []))
@@ -327,12 +336,34 @@ def orchestrate() -> None:
             expect(five, "PASS", "relay")
             checks.append({"case": "relay_restart_recovery", **five})
 
+            # A compromised intermediary can alter bytes but cannot construct
+            # a matching HMAC response without the peer key. Reusing the
+            # previously closed socket is safe after the old worker exits.
+            relay.terminate()
+            relay.wait(timeout=3)
+            corrupt_relay = worker(topology, "relay", key, corrupt=True)
+            workers.append(corrupt_relay)
+            time.sleep(1.2)
+            tampered = client(topology, key)
+            expect(tampered, "AUTH_FAIL", "relay")
+            checks.append({"case": "relay_reply_tampering_rejected", **tampered})
+            corrupt_relay.terminate()
+            corrupt_relay.wait(timeout=3)
+            relay = worker(topology, "relay", key)
+            workers.append(relay)
+            time.sleep(1.2)
+            recovered = client(topology, key)
+            expect(recovered, "PASS", "relay")
+            checks.append({"case": "normal_relay_recovers_after_tampering", **recovered})
+
             topology.unblock_direct()
             six = client(topology, key)
             expect(six, "PASS", "direct")
             checks.append({"case": "direct_unblocked_recovery", **six})
 
-            successful = [c["latency_ms"] for c in checks if c["result"] == "PASS"]
+            successful = [c["total_elapsed_ms"] for c in checks if c["result"] == "PASS"]
+            fallback = [c["total_elapsed_ms"] for c in checks
+                        if c["result"] == "PASS" and c["path"] == "relay"]
             metrics = {
                 "suite": "omega_horizon_linux_netns_nat_udp",
                 "status": "PASS",
@@ -342,7 +373,8 @@ def orchestrate() -> None:
                 "internet_egress": False,
                 "data_encryption_proven_by_this_suite": False,
                 "actual_nat_hole_punching_implemented": False,
-                "mean_success_latency_ms": round(statistics.mean(successful), 2),
+                "mean_end_to_end_success_ms": round(statistics.mean(successful), 2),
+                "mean_relay_fallback_end_to_end_ms": round(statistics.mean(fallback), 2),
                 "elapsed_seconds": round(time.monotonic() - started, 2),
                 "checks": checks
             }
