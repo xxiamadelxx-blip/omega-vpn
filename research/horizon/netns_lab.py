@@ -75,6 +75,19 @@ def peer_worker() -> None:
                 payload, address = sock.recvfrom(256)
             except socket.timeout:
                 continue
+            if payload.startswith(b"OFFER:") and address == (RELAY_LAN, RELAY_PORT):
+                # Rendezvous hint only. Only lab NAT external addresses may be used.
+                try:
+                    remote_ip, port = payload[6:].decode("ascii").split(":")
+                    remote_port = int(port)
+                except (UnicodeError, ValueError):
+                    continue
+                if remote_ip == "10.53.10.2" and 1024 <= remote_port <= 65535:
+                    # Outbound UDP to the remote mapped endpoint opens the
+                    # corresponding conntrack/NAT filter entry in this lab.
+                    for _ in range(3):
+                        sock.sendto(b"HOLE", (remote_ip, remote_port))
+                continue
             try:
                 nonce = parse_frame(payload, b"P", key)
             except ValueError:
@@ -103,6 +116,12 @@ def relay_worker(corrupt: bool) -> None:
                     peer_address = address
                 continue
             if not peer_address:
+                continue
+            if payload == b"RENDEZVOUS" and address[0] == "10.53.10.2":
+                # Synthetic rendezvous discovery. Do not trust it for identity.
+                # The client must authenticate any response using its HMAC.
+                sock.sendto(f"PADDR:{peer_address[0]}:{peer_address[1]}".encode(), address)
+                sock.sendto(f"OFFER:{address[0]}:{address[1]}".encode(), peer_address)
                 continue
             if payload[:1] == b"P" and len(payload) == 45:
                 client_address = address
@@ -156,6 +175,67 @@ def client_worker() -> int:
                       "total_elapsed_ms": round(1000 * (time.monotonic() - session_started), 2),
                       "failed_paths": samples}), flush=True)
     return 11
+
+
+
+def punch_client_worker() -> int:
+    """Attempt simultaneous UDP opening through the two isolated NAT routers.
+
+    The rendezvous relay exchanges observed endpoints, but does not carry
+    the PING/ACK payload. Only the peer can make a valid lab HMAC response.
+    """
+    key = lab_key()
+    nonce = secrets.token_bytes(NONCE_BYTES)
+    started = time.monotonic()
+    with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sock:
+        sock.bind((CLIENT_LAN, 0))
+        sock.settimeout(1.4)
+        sock.sendto(b"RENDEZVOUS", (RELAY_LAN, RELAY_PORT))
+        try:
+            offer, sender = sock.recvfrom(256)
+            if sender != (RELAY_LAN, RELAY_PORT) or not offer.startswith(b"PADDR:"):
+                raise ValueError("invalid rendezvous response")
+            address, port = offer[6:].decode("ascii").split(":")
+            remote = (address, int(port))
+            if address != PEER_NAT or not 1024 <= remote[1] <= 65535:
+                raise ValueError("unapproved peer address")
+        except (socket.timeout, ValueError, UnicodeError):
+            print(json.dumps({"result": "NO_PATH", "path": "punch_direct",
+                              "reason": "rendezvous_unavailable"}), flush=True)
+            return 11
+
+        # Sending to peer public mapping opens client NAT conntrack. The peer's
+        # response to the relay's OFFER opens peer NAT conntrack. Either initial
+        # HOLE can be lost, so repeat the synthetic PING for a bounded window.
+        sock.sendto(b"HOLE", remote)
+        deadline = time.monotonic() + 2.5
+        while time.monotonic() < deadline:
+            sock.sendto(frame(b"P", nonce, key), remote)
+            sock.settimeout(0.12)
+            try:
+                payload, sender = sock.recvfrom(256)
+            except socket.timeout:
+                continue
+            if payload == b"HOLE":
+                continue
+            if sender != remote:
+                continue
+            try:
+                received = parse_frame(payload, b"A", key)
+                if received != nonce:
+                    raise ValueError("unexpected nonce")
+            except ValueError:
+                print(json.dumps({"result": "AUTH_FAIL", "path": "punch_direct",
+                                  "reason": "hole_punch_response_rejected"}), flush=True)
+                return 13
+            print(json.dumps({"result": "PASS", "path": "punch_direct",
+                              "total_elapsed_ms": round((time.monotonic() - started) * 1000, 2),
+                              "nat_mapping": "controlled_linux_masquerade",
+                              "relay_carried_application_probe": False}), flush=True)
+            return 0
+        print(json.dumps({"result": "NO_PATH", "path": "punch_direct",
+                          "reason": "hole_punch_timeout"}), flush=True)
+        return 11
 
 
 def run(*args: str, timeout: float = 9, check: bool = True,
@@ -271,11 +351,12 @@ def worker(topology: Topology, role: str, key: str, corrupt: bool = False):
                             stderr=subprocess.PIPE, start_new_session=True)
 
 
-def client(topology: Topology, key: str) -> dict:
+def client(topology: Topology, key: str, *, punch: bool = False) -> dict:
     env = dict(os.environ)
     env["OMEGA_HORIZON_LAB_KEY"] = key
     result = topology.exec("client", sys.executable, os.path.abspath(__file__),
-                           "--worker", "client", timeout=7, check=False, env=env)
+                           "--worker", "client", *(["--punch"] if punch else []),
+                           timeout=7, check=False, env=env)
     try:
         data = json.loads(result.stdout.strip().splitlines()[-1])
     except Exception as exc:
@@ -312,6 +393,12 @@ def orchestrate() -> None:
             one = client(topology, key)
             expect(one, "PASS", "relay")
             checks.append({"case": "unmapped_nat_relay_fallback", **one})
+
+            # Unlike the explicit port-forward case below, this establishes
+            # both NAT mappings using rendezvous and reciprocal UDP sends.
+            punched = client(topology, key, punch=True)
+            expect(punched, "PASS", "punch_direct")
+            checks.append({"case": "simultaneous_udp_nat_hole_punch", **punched})
 
             topology.open_mapping()
             two = client(topology, key)
@@ -372,7 +459,8 @@ def orchestrate() -> None:
                 "root_network_modifications": False,
                 "internet_egress": False,
                 "data_encryption_proven_by_this_suite": False,
-                "actual_nat_hole_punching_implemented": False,
+                "actual_nat_hole_punching_implemented": True,
+                "nat_hole_punch_scope": "Linux MASQUERADE and conntrack only; not symmetric NAT",
                 "mean_end_to_end_success_ms": round(statistics.mean(successful), 2),
                 "mean_relay_fallback_end_to_end_ms": round(statistics.mean(fallback), 2),
                 "elapsed_seconds": round(time.monotonic() - started, 2),
@@ -422,11 +510,12 @@ if __name__ == "__main__":
     cli.add_argument("--worker", choices=("client", "peer", "relay"))
     cli.add_argument("--self-test", action="store_true")
     cli.add_argument("--corrupt", action="store_true")
+    cli.add_argument("--punch", action="store_true")
     args = cli.parse_args()
     if args.orchestrate:
         orchestrate()
     elif args.worker == "client":
-        sys.exit(client_worker())
+        sys.exit(punch_client_worker() if args.punch else client_worker())
     elif args.worker == "peer":
         peer_worker()
     elif args.worker == "relay":
