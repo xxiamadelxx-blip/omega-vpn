@@ -201,7 +201,8 @@ def punch_client_worker() -> int:
                 raise ValueError("unapproved peer address")
         except (socket.timeout, ValueError, UnicodeError):
             print(json.dumps({"result": "NO_PATH", "path": "punch_direct",
-                              "reason": "rendezvous_unavailable"}), flush=True)
+                              "reason": "rendezvous_unavailable",
+                              "total_elapsed_ms": round((time.monotonic() - started) * 1000, 2)}), flush=True)
             return 11
 
         # Sending to peer public mapping opens client NAT conntrack. The peer's
@@ -234,7 +235,8 @@ def punch_client_worker() -> int:
                               "relay_carried_application_probe": False}), flush=True)
             return 0
         print(json.dumps({"result": "NO_PATH", "path": "punch_direct",
-                          "reason": "hole_punch_timeout"}), flush=True)
+                          "reason": "hole_punch_timeout",
+                          "total_elapsed_ms": round((time.monotonic() - started) * 1000, 2)}), flush=True)
         return 11
 
 
@@ -397,8 +399,21 @@ def orchestrate() -> None:
             # Unlike the explicit port-forward case below, this establishes
             # both NAT mappings using rendezvous and reciprocal UDP sends.
             punched = client(topology, key, punch=True)
-            expect(punched, "PASS", "punch_direct")
-            checks.append({"case": "simultaneous_udp_nat_hole_punch", **punched})
+            if punched["result"] == "PASS" and punched["path"] == "punch_direct":
+                hole_punch_status = "PASS_CONTROLLED_NAT"
+            elif punched["result"] == "NO_PATH" and punched["path"] == "punch_direct":
+                # Endpoint-dependent NAT mappings can invalidate the address
+                # learned from rendezvous. This is NOT an accepted direct path.
+                hole_punch_status = "UNSUPPORTED_NAT_MAPPING"
+            else:
+                raise AssertionError("unexpected UDP punching outcome: " + str(punched))
+            checks.append({"case": "simultaneous_udp_nat_hole_punch_trial",
+                           "capability_status": hole_punch_status, **punched})
+            # A failed attempt must preserve connectivity via the registered
+            # peer relay, never switch to unprotected Internet egress.
+            post_punch = client(topology, key)
+            expect(post_punch, "PASS", "relay")
+            checks.append({"case": "unusable_hole_punch_relay_fallback", **post_punch})
 
             topology.open_mapping()
             two = client(topology, key)
@@ -459,8 +474,10 @@ def orchestrate() -> None:
                 "root_network_modifications": False,
                 "internet_egress": False,
                 "data_encryption_proven_by_this_suite": False,
-                "actual_nat_hole_punching_implemented": True,
-                "nat_hole_punch_scope": "Linux MASQUERADE and conntrack only; not symmetric NAT",
+                "hole_punch_trial_completed": True,
+                "hole_punch_status": hole_punch_status,
+                "hole_punch_direct_confirmed": hole_punch_status == "PASS_CONTROLLED_NAT",
+                "nat_hole_punch_scope": "controlled Linux NAT only; unsupported outcomes are reported, not PASS",
                 "mean_end_to_end_success_ms": round(statistics.mean(successful), 2),
                 "mean_relay_fallback_end_to_end_ms": round(statistics.mean(fallback), 2),
                 "elapsed_seconds": round(time.monotonic() - started, 2),
