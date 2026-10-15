@@ -1,0 +1,36 @@
+name: Omega Horizon P2P research lab
+
+on:
+  push:
+    branches:
+      - research/omega-horizon-p2p-lab
+    paths:
+      - 'research/horizon/**'
+      - '.github/workflows/omega-horizon-p2p-lab.yml'
+  pull_request:
+    paths:
+      - 'research/horizon/**'
+      - '.github/workflows/omega-horizon-p2p-lab.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  horizon-lab:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Checkout research branch
+        uses: actions/checkout@v4
+      - name: Python 3.13
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - name: Check test environment
+        run: |
+          python3 --version
+          openssl version
+          python3 -m compileall -q research/horizon
+      - name: Controlled loopback TLS P2P and relay tests
+        run: python3 -m unittest discover -s research/horizon/tests -v
