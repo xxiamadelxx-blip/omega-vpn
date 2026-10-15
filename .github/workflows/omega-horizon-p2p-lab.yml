@@ -44,6 +44,11 @@ jobs:
           command -v ip
           command -v iptables
           sudo -E "$(command -v python3)" research/horizon/nat_matrix.py --orchestrate
+      - name: TLS 1.3 peer authentication over isolated TCP NAT and blind relay
+        run: |
+          set -euo pipefail
+          command -v openssl
+          sudo -E "$(command -v python3)" research/horizon/tls_netns.py --orchestrate
       - name: Isolated NAT and UDP relay recovery on real Linux namespaces
         run: |
           set -euo pipefail
